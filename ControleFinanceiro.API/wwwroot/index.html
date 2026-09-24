@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Dashboard de Controle Financeiro Pessoal — Gerencie receitas, despesas, parcelamentos e salário em uma interface visual moderna.">
+    <title>Controle Financeiro</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💰</text></svg>">
+</head>
+<body>
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <div class="app-container">
+        <!-- ══════════ HEADER ══════════ -->
+        <header class="app-header">
+            <div class="app-header__brand">
+                <div class="app-header__logo">💰</div>
+                <div>
+                    <h1 class="app-header__title">Controle Financeiro</h1>
+                    <p class="app-header__subtitle">Seu dinheiro sob controle</p>
+                </div>
+            </div>
+            <div class="month-selector">
+                <button id="btn-prev-month" class="month-selector__btn" title="Mês anterior">◀</button>
+                <span id="month-label" class="month-selector__label">Agosto 2026</span>
+                <button id="btn-next-month" class="month-selector__btn" title="Próximo mês">▶</button>
+            </div>
+        </header>
+
+        <p id="resumo-aviso" class="transition-notice" role="note">Resumo dos lançamentos cadastrados. Estes valores ainda não representam saldo bancário confirmado.</p>
+
+        <section class="section-card accounts-section" aria-labelledby="contas-title">
+            <h2 id="contas-title" class="section-card__title">Contas</h2>
+            <p>Organize seus lançamentos por conta. Associar uma conta não confirma pagamento ou recebimento.</p>
+            <form id="form-conta" class="form-grid">
+                <div class="form-group"><label for="conta-nome">Nome da conta</label><input id="conta-nome" required maxlength="100" placeholder="Ex.: Nubank, carteira"></div>
+                <div class="form-group"><label for="conta-tipo">Tipo de conta</label><select id="conta-tipo" required><option value="ContaCorrente">Conta corrente</option><option value="Poupanca">Poupança</option><option value="Carteira">Carteira</option></select></div>
+                <button class="btn btn--primary" id="conta-salvar" type="submit">Cadastrar conta</button>
+                <button class="btn" id="conta-cancelar" type="button" hidden>Cancelar edição</button>
+            </form>
+            <p id="contas-feedback" role="status"></p>
+            <ul id="contas-lista" class="accounts-list"></ul>
+        </section>
+
+        <!-- ══════════ SUMMARY CARDS ══════════ -->
+        <section class="summary-cards" id="summary-cards">
+            <div class="summary-card summary-card--saldo">
+                <div class="summary-card__header">
+                    <span class="summary-card__label">Resultado dos lançamentos</span>
+                    <div class="summary-card__icon">🏦</div>
+                </div>
+                <div class="summary-card__value" id="card-saldo">R$ 0,00</div>
+                <div class="summary-card__detail">Receitas − Despesas (acumulado)</div>
+            </div>
+            <div class="summary-card summary-card--recebido">
+                <div class="summary-card__header">
+                    <span class="summary-card__label">Receitas cadastradas</span>
+                    <div class="summary-card__icon">📈</div>
+                </div>
+                <div class="summary-card__value" id="card-recebido">R$ 0,00</div>
+                <div class="summary-card__detail">Total de receitas do mês</div>
+            </div>
+            <div class="summary-card summary-card--gasto">
+                <div class="summary-card__header">
+                    <span class="summary-card__label">Despesas cadastradas</span>
+                    <div class="summary-card__icon">📉</div>
+                </div>
+                <div class="summary-card__value" id="card-gasto">R$ 0,00</div>
+                <div class="summary-card__detail">Total de despesas do mês</div>
+            </div>
+            <div class="summary-card summary-card--previsto">
+                <div class="summary-card__header">
+                    <span class="summary-card__label">Previsto (Futuro)</span>
+                    <div class="summary-card__icon">📅</div>
+                </div>
+                <div class="summary-card__value" id="card-previsto">R$ 0,00</div>
+                <div class="summary-card__detail">Parcelas e despesas futuras</div>
+            </div>
+        </section>
+
+        <!-- ══════════ MAIN GRID ══════════ -->
+        <div class="main-grid">
+            <!-- LEFT: Transaction Form -->
+            <div class="section-card">
+                <h2 class="section-card__title"><span>➕</span> Nova Transação</h2>
+                <form id="form-transacao" class="form-grid">
+                    <!-- Tipo Toggle -->
+                    <div class="toggle-row">
+                        <button type="button" class="toggle-btn toggle-btn--despesa toggle-btn--active" id="btn-tipo-despesa" data-tipo="Despesa">📉 Despesa</button>
+                        <button type="button" class="toggle-btn toggle-btn--receita" id="btn-tipo-receita" data-tipo="Receita">📈 Receita</button>
+                    </div>
+
+                    <div class="form-group form-group--full">
+                        <label for="tx-titulo">Título</label>
+                        <input type="text" id="tx-titulo" placeholder="Ex: Conta de Luz, Restaurante..." required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="tx-valor">Valor (R$)</label>
+                        <input type="number" id="tx-valor" placeholder="0,00" step="0.01" min="0.01" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="tx-data">Data</label>
+                        <input type="date" id="tx-data" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="tx-categoria">Categoria</label>
+                        <select id="tx-categoria" required>
+                            <option value="">Selecione...</option>
+                            <option value="Alimentação">🍽️ Alimentação</option>
+                            <option value="Moradia">🏠 Moradia</option>
+                            <option value="Transporte">🚗 Transporte</option>
+                            <option value="Saúde">💊 Saúde</option>
+                            <option value="Educação">📚 Educação</option>
+                            <option value="Lazer">🎮 Lazer</option>
+                            <option value="Tecnologia">💻 Tecnologia</option>
+                            <option value="Roupas">👕 Roupas</option>
+                            <option value="Contas">📄 Contas</option>
+                            <option value="Investimentos">📊 Investimentos</option>
+                            <option value="Salário">💰 Salário</option>
+                            <option value="Renda Extra">💵 Renda Extra</option>
+                            <option value="Outros">📦 Outros</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="tx-metodo">Método de Pagamento</label>
+                        <select id="tx-metodo" required>
+                            <option value="Pix">⚡ Pix</option>
+                            <option value="CartaoCredito">💳 Cartão de Crédito</option>
+                            <option value="Debito">💳 Débito</option>
+                            <option value="Dinheiro">💵 Dinheiro</option>
+                            <option value="Transferencia">🏦 Transferência</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group form-group--full" id="conta-group">
+                        <label for="tx-conta">Conta</label>
+                        <select id="tx-conta" required><option value="">Cadastre ou selecione uma conta ativa</option></select>
+                        <small id="tx-conta-ajuda">Selecione a conta deste lançamento.</small>
+                    </div>
+
+                    <div class="form-group" id="parcelas-group">
+                        <label for="tx-parcelas">Parcelas</label>
+                        <input type="number" id="tx-parcelas" value="1" min="1" max="48">
+                    </div>
+
+                    <div class="form-group">
+                        <!-- spacer -->
+                    </div>
+
+                    <button type="submit" class="btn btn--primary btn--full" id="btn-salvar">
+                        💾 Cadastrar Transação
+                    </button>
+                </form>
+            </div>
+
+            <!-- RIGHT: Salary + Categories + Forecast -->
+            <div style="display: flex; flex-direction: column; gap: 20px;">
+                <!-- Salary -->
+                <div class="section-card">
+                    <h2 class="section-card__title"><span>💰</span> Salário Mensal</h2>
+                    <p>O cadastro de salário não gera recebimentos automaticamente.</p>
+                    <div id="salary-display" class="salary-display">
+                        <div class="salary-display__empty">Nenhum salário configurado</div>
+                    </div>
+                    <div class="divider"></div>
+                    <form id="form-salario" class="salary-form">
+                        <div class="form-group">
+                            <label for="sal-valor">Valor (R$)</label>
+                            <input type="number" id="sal-valor" placeholder="5.000,00" step="0.01" min="0.01" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="sal-dia">Dia Pgto</label>
+                            <input type="number" id="sal-dia" placeholder="5" min="1" max="31" required>
+                        </div>
+                        <button type="submit" class="btn btn--success">Salvar</button>
+                    </form>
+                </div>
+
+                <!-- Categories Chart -->
+                <div class="section-card">
+                    <h2 class="section-card__title"><span>📊</span> Gastos por Categoria</h2>
+                    <div id="category-chart" class="category-chart">
+                        <div class="empty-state">
+                            <div class="empty-state__text">Sem dados para exibir</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Forecast -->
+                <div class="section-card">
+                    <h2 class="section-card__title"><span>🔮</span> Previsão Futura</h2>
+                    <div id="forecast-list" class="forecast-list">
+                        <div class="empty-state">
+                            <div class="empty-state__text">Sem parcelas futuras</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══════════ TRANSACTIONS TABLE ══════════ -->
+        <section class="section-card transactions-section">
+            <h2 class="section-card__title"><span>📋</span> Transações do Mês</h2>
+
+            <div class="transactions-filters" id="tx-filters">
+                <button class="filter-chip filter-chip--active" data-filter="all">Todas</button>
+                <button class="filter-chip" data-filter="Pix">⚡ Pix</button>
+                <button class="filter-chip" data-filter="CartaoCredito">💳 Cartão</button>
+                <button class="filter-chip" data-filter="Debito">💳 Débito</button>
+                <button class="filter-chip" data-filter="Dinheiro">💵 Dinheiro</button>
+                <button class="filter-chip" data-filter="Transferencia">🏦 Transferência</button>
+            </div>
+
+            <div id="transactions-body">
+                <table class="transactions-table">
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Título</th>
+                            <th>Categoria</th>
+                            <th>Método</th>
+                            <th>Conta / organização do histórico</th>
+                            <th style="text-align: right">Valor</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="transactions-list">
+                    </tbody>
+                </table>
+                <div id="empty-transactions" class="empty-state" style="display: none;">
+                    <div class="empty-state__icon">📭</div>
+                    <div class="empty-state__text">Nenhuma transação neste mês.<br>Cadastre sua primeira transação acima!</div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script src="js/app.js"></script>
+    <script src="js/contas.js"></script>
+</body>
+</html>

@@ -1,0 +1,72 @@
+# =========================
+# .NET
+# =========================
+
+# Arquivos gerados durante compilação
+bin/
+obj/
+
+# =========================
+# Visual Studio
+# =========================
+
+.vs/
+*.user
+*.suo
+
+# =========================
+# Testes
+# =========================
+
+TestResults/
+coverage/
+*.trx
+
+# =========================
+# Logs
+# =========================
+
+*.log
+
+# =========================
+# Bancos locais
+# =========================
+
+*.db
+*.sqlite
+*.sqlite3
+
+# Arquivos físicos do SQL Server, caso apareçam no projeto
+*.mdf
+*.ldf
+
+# Backups de banco
+*.bak
+
+# =========================
+# Configurações locais
+# =========================
+
+appsettings.Development.json
+appsettings.Local.json
+
+# Arquivos .env podem conter senhas/tokens
+.env
+.env.*
+
+# Permite no futuro ter um exemplo público
+!.env.example
+
+# =========================
+# Sistema operacional
+# =========================
+
+.DS_Store
+Thumbs.db
+
+# =========================
+# Arquivos temporários
+# =========================
+
+*.tmp
+*.temp
