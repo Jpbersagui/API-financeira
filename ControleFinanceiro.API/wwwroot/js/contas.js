@@ -43,11 +43,14 @@ function renderContas() {
             status.disabled = true;
             try {
                 await respostaConta(await fetch(`/api/contas/${conta.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome: conta.nome, tipo: conta.tipo, ativa: !conta.ativa }) }));
-                await carregarContas();
+                await atualizarFinanceiro();
                 showToast('Situação da conta atualizada. O histórico foi preservado.');
             } catch (error) { showToast(error.message, 'error'); status.disabled = false; }
         });
-        item.append(texto, editar, status); lista.append(item);
+        item.append(texto, editar, status,
+            botao(conta.dataAbertura ? 'Corrigir saldo inicial' : 'Informar saldo inicial', () => abrirAbertura(conta.id)),
+            botao('Ver extrato', () => abrirExtrato(conta.id)),
+            botao('Revisar lançamentos', () => abrirRevisao(conta.id))); lista.append(item);
     });
     const select = document.getElementById('tx-conta');
     const anterior = select.value;
@@ -55,6 +58,7 @@ function renderContas() {
     contas.filter(c => c.ativa).forEach(c => select.add(new Option(c.nome, c.id)));
     if (contas.some(c => c.ativa && String(c.id) === anterior)) select.value = anterior;
     updateContaVisibility();
+    preencherContasFinanceiras();
 }
 
 function updateContaVisibility() {
@@ -64,16 +68,17 @@ function updateContaVisibility() {
     select.required = !credito;
     document.getElementById('tx-conta-ajuda').textContent = credito
         ? 'Compra no crédito: a conta bancária não é associada nesta etapa.'
-        : contas.some(c => c.ativa) ? 'Selecione a conta. O lançamento permanece não reconciliado.' : 'Cadastre ou reative uma conta para continuar.';
+        : contas.some(c => c.ativa) ? 'Selecione a conta. O lançamento continuará aguardando revisão e não entrará no saldo.' : 'Cadastre ou reative uma conta para continuar.';
 }
 
 function contaHistoricoHtml(t) {
-    if (t.metodoPagamento === 'CartaoCredito') return '<span>Crédito — classificação futura</span><small class="history-note">Não reconciliado</small>';
+    if (t.estado !== 'NaoReconciliada') return `<span>${escapeHtml(t.contaNome || 'Sem conta')}</span><small class="history-note">${escapeHtml(situacao(t))}</small>`;
+    if (t.creditoLegado || t.metodoPagamento === 'CartaoCredito') return '<span>Compra no cartão — fora do saldo</span><small class="history-note">Aguardando revisão</small>';
     const options = contas.map(c => `<option value="${c.id}" ${c.id === t.contaId ? 'selected' : ''}>${escapeHtml(c.nome)}${c.ativa ? '' : ' (inativa)'}</option>`).join('');
     return `<span>${escapeHtml(t.contaNome || 'Sem conta associada')}</span>
-        <small class="history-note">Não reconciliado</small>
+        <small class="history-note">Aguardando revisão</small>
         <select id="associar-${t.id}" aria-label="Conta para ${escapeHtml(t.titulo)}"><option value="">Selecione uma conta</option>${options}</select>
-        <button type="button" class="btn" data-associar="${t.id}">Associar conta</button>`;
+        <button type="button" class="btn" data-associar="${t.id}">Informar conta</button>`;
 }
 
 function cancelarEdicaoConta() {
@@ -99,9 +104,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify(existente ? { nome, tipo, ativa: existente.ativa } : { nome, tipo })
             }));
             cancelarEdicaoConta();
-            await carregarContas();
-            await loadDashboard();
+            await atualizarFinanceiro();
             showToast('Conta salva.');
+            document.getElementById('contas-feedback').textContent = 'Conta salva. Use “Informar saldo inicial” ao lado da conta para começar o acompanhamento.';
         } catch (error) { showToast(error.message, 'error'); }
         finally { button.disabled = false; }
     });
@@ -114,7 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
         button.disabled = true;
         try {
             await respostaConta(await fetch(`/api/transacoes/${id}/conta`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contaId }) }));
-            await loadDashboard();
+            await atualizarFinanceiro();
             showToast('Conta associada. Isso não confirma pagamento ou recebimento.');
         } catch (error) { showToast(error.message, 'error'); button.disabled = false; }
     });

@@ -4,6 +4,7 @@ using ControleFinanceiro.API.Enums;
 using ControleFinanceiro.API.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ControleFinanceiro.API.Services;
 
 namespace ControleFinanceiro.API.Controllers
 {
@@ -13,10 +14,14 @@ namespace ControleFinanceiro.API.Controllers
     public class TransacoesController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly MovimentacaoService _movimentos;
+        private readonly SaldoService _saldos;
 
-        public TransacoesController(AppDbContext context)
+        public TransacoesController(AppDbContext context, MovimentacaoService movimentos, SaldoService saldos)
         {
             _context = context;
+            _movimentos = movimentos;
+            _saldos = saldos;
         }
 
         // ─────────────────────────────────────────────────────────────
@@ -31,9 +36,13 @@ namespace ControleFinanceiro.API.Controllers
         [HttpGet]
         [ProducesResponseType(typeof(List<TransacaoReadDto>), StatusCodes.Status200OK)]
         public async Task<ActionResult<List<TransacaoReadDto>>> GetTransacoes(
-            [FromQuery] MetodoPagamento? metodoPagamento)
+            [FromQuery] MetodoPagamento? metodoPagamento, [FromQuery] EstadoTransacao? estado,
+            [FromQuery] int? contaId, [FromQuery] ClassificacaoPendenteTransacao? classificacao)
         {
             IQueryable<Transacao> query = _context.Transacoes.Include(t => t.Conta).AsNoTracking();
+            if (estado.HasValue) query = query.Where(t => t.Estado == estado);
+            if (contaId.HasValue) query = query.Where(t => t.ContaId == contaId);
+            if (classificacao.HasValue) query = query.Where(t => t.ClassificacaoPendente == classificacao);
 
             if (metodoPagamento.HasValue)
             {
@@ -124,6 +133,7 @@ namespace ControleFinanceiro.API.Controllers
                 // Criar a primeira parcela (transação original)
                 var primeiraTransacao = new Transacao
                 {
+                    OrigemRegistro = OrigemRegistroTransacao.CreditoLegado,
                     Titulo = $"{dto.Titulo} (Parcela 1/{dto.NumeroParcelas})",
                     Valor = valorParcela + diferenca,
                     Data = dto.Data,
@@ -145,6 +155,7 @@ namespace ControleFinanceiro.API.Controllers
                 {
                     var parcela = new Transacao
                     {
+                        OrigemRegistro = OrigemRegistroTransacao.CreditoLegado,
                         Titulo = $"{dto.Titulo} (Parcela {i}/{dto.NumeroParcelas})",
                         Valor = valorParcela,
                         Data = dto.Data.AddMonths(i - 1),
@@ -168,6 +179,7 @@ namespace ControleFinanceiro.API.Controllers
                 // ── Transação à vista (única) ──
                 var transacao = new Transacao
                 {
+                    OrigemRegistro = dto.MetodoPagamento == MetodoPagamento.CartaoCredito ? OrigemRegistroTransacao.CreditoLegado : OrigemRegistroTransacao.LegadoComum,
                     ContaId = dto.ContaId,
                     Conta = conta,
                     Titulo = dto.Titulo,
@@ -214,6 +226,10 @@ namespace ControleFinanceiro.API.Controllers
                 return NotFound(new { mensagem = $"Transação com ID {id} não encontrada." });
 
             // A conta só muda pela operação de associação; preservar vínculos existentes.
+            if (transacao.Estado != EstadoTransacao.NaoReconciliada)
+                return Conflict(new { mensagem = "Use o fluxo específico de correção para movimentos confirmados. Desconsiderados são preservados." });
+            if (await _movimentos.Credito(transacao) || dto.MetodoPagamento == MetodoPagamento.CartaoCredito || dto.NumeroParcelas > 1)
+                transacao.OrigemRegistro = OrigemRegistroTransacao.CreditoLegado;
             if (dto.MetodoPagamento == MetodoPagamento.CartaoCredito && transacao.ContaId != null)
                 return BadRequest(new { mensagem = "Um lançamento associado a conta não pode ser convertido em crédito legado." });
 
@@ -244,7 +260,9 @@ namespace ControleFinanceiro.API.Controllers
         {
             var transacao = await _context.Transacoes.FindAsync(id);
             if (transacao == null) return NotFound(new { mensagem = "Lançamento não encontrado." });
-            if (transacao.MetodoPagamento == MetodoPagamento.CartaoCredito)
+            if (transacao.Estado != EstadoTransacao.NaoReconciliada)
+                return Conflict(new { mensagem = "A associação comum só altera lançamentos não reconciliados. Use correção para confirmados." });
+            if (await _movimentos.Credito(transacao))
                 return BadRequest(new { mensagem = "O crédito legado será associado a cartões em uma fase posterior." });
             var conta = await _context.Contas.FindAsync(dto.ContaId);
             if (conta == null) return BadRequest(new { mensagem = "Conta não encontrada." });
@@ -255,29 +273,12 @@ namespace ControleFinanceiro.API.Controllers
         }
 
         [HttpDelete("{id:int}")]
-        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> DeleteTransacao(int id)
         {
-            var transacao = await _context.Transacoes.FindAsync(id);
-
-            if (transacao == null)
-                return NotFound(new { mensagem = $"Transação com ID {id} não encontrada." });
-
-            // Se for a transação original de um parcelamento, remover todas as parcelas
-            var parcelas = await _context.Transacoes
-                .Where(t => t.TransacaoOrigemId == id)
-                .ToListAsync();
-
-            if (parcelas.Any())
-            {
-                _context.Transacoes.RemoveRange(parcelas);
-            }
-
-            _context.Transacoes.Remove(transacao);
-            await _context.SaveChangesAsync();
-
-            return NoContent();
+            if (!await _context.Transacoes.AnyAsync(t => t.Id == id)) return NotFound();
+            return Conflict(new { mensagem = "Use a ação Desconsiderar e informe um motivo. O histórico não será excluído." });
         }
 
         // ─────────────────────────────────────────────────────────────
@@ -335,6 +336,7 @@ namespace ControleFinanceiro.API.Controllers
                 TotalReceitas = totalReceitas,
                 TotalDespesas = totalDespesas,
                 SaldoFinal = totalReceitas - totalDespesas,
+                Financeiro = await _saldos.Resumo(mes, ano),
                 GastosPorCategoria = gastosPorCategoria
             };
 
@@ -345,13 +347,46 @@ namespace ControleFinanceiro.API.Controllers
         // Helper: mapeamento Model → ReadDTO
         // ─────────────────────────────────────────────────────────────
 
-        private static TransacaoReadDto MapToReadDto(Transacao t)
+        [HttpPost("realizadas")]
+        public async Task<ActionResult<TransacaoReadDto>> Realizada(TransacaoRealizadaCreateDto dto)
+        {
+            var t = await _movimentos.Criar(dto);
+            return CreatedAtAction(nameof(GetTransacao), new { id = t.Id }, MapToReadDto(t));
+        }
+        [HttpPost("{id:int}/confirmacao")]
+        public async Task<ActionResult<TransacaoReadDto>> Confirmacao(int id, ConfirmarTransacaoDto dto)
+            => Ok(MapToReadDto(await _movimentos.Confirmar(id, dto)));
+        [HttpPut("{id:int}/correcao")]
+        public async Task<ActionResult<TransacaoReadDto>> Correcao(int id, CorrigirTransacaoDto dto)
+            => Ok(MapToReadDto(await _movimentos.Corrigir(id, dto)));
+        [HttpPost("{id:int}/desconsideracao")]
+        public async Task<ActionResult<TransacaoReadDto>> Desconsideracao(int id, DesconsiderarTransacaoDto dto)
+            => Ok(MapToReadDto(await _movimentos.Desconsiderar(id, dto)));
+        [HttpPut("{id:int}/classificacao")]
+        public async Task<ActionResult<TransacaoReadDto>> Classificacao(int id, ClassificarHistoricoDto dto)
+            => Ok(MapToReadDto(await _movimentos.Classificar(id, dto)));
+        [HttpGet("{id:int}/revisoes")]
+        public async Task<IActionResult> Revisoes(int id)
+        {
+            if (!await _context.Transacoes.AnyAsync(t => t.Id == id)) return NotFound();
+            return Ok(await _context.RevisoesTransacoes.AsNoTracking().Where(r => r.TransacaoId == id)
+                .OrderBy(r => r.Id).Select(r => new { r.Id, r.Instante, r.Motivo, r.Antes, r.Depois }).ToListAsync());
+        }
+
+        public static TransacaoReadDto MapToReadDto(Transacao t)
         {
             return new TransacaoReadDto
             {
                 Id = t.Id,
                 ContaId = t.ContaId,
                 ContaNome = t.Conta?.Nome,
+                Estado = t.Estado,
+                OrigemRegistro = t.OrigemRegistro,
+                ClassificacaoPendente = t.ClassificacaoPendente,
+                DataEfetivacao = t.DataEfetivacao,
+                Versao = Convert.ToBase64String(t.Versao),
+                CreditoLegado = MovimentacaoService.EstruturaCredito(t),
+                MotivoDesconsideracao = t.MotivoDesconsideracao,
                 Titulo = t.Titulo,
                 Valor = t.Valor,
                 Data = t.Data,

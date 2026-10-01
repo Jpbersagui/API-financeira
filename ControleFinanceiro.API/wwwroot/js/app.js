@@ -61,23 +61,12 @@ async function createTransaction(data) {
         const result = await res.json();
         const count = Array.isArray(result) ? result.length : 1;
         showToast(`Transação criada com sucesso! ${count > 1 ? `(${count} parcelas)` : ''}`, 'success');
-        loadDashboard();
+        await loadDashboard();
+        await carregarRevisao();
         return true;
     } catch (err) {
         showToast(err.message, 'error');
         return false;
-    }
-}
-
-async function deleteTransaction(id) {
-    if (!confirm('Tem certeza que deseja excluir esta transação? Se for parcelada, todas as parcelas serão removidas.')) return;
-    try {
-        const res = await fetch(`${API}/api/transacoes/${id}`, { method: 'DELETE' });
-        if (!res.ok) throw new Error('Erro ao excluir');
-        showToast('Transação excluída!', 'success');
-        loadDashboard();
-    } catch (err) {
-        showToast(err.message, 'error');
     }
 }
 
@@ -106,6 +95,7 @@ function renderDashboard() {
     const d = state.dashboard;
     if (!d) return;
     document.getElementById('resumo-aviso').textContent = d.aviso;
+    renderFinanceiro(d.financeiro);
 
     // ── Cards ──
     document.getElementById('card-saldo').textContent = formatCurrency(d.saldoConta);
@@ -222,7 +212,7 @@ function renderTransactions(transactions) {
                 <td><span class="tx-badge ${badgeClass}">${metodoLabel}</span></td>
                 <td>${contaHistoricoHtml(t)}</td>
                 <td style="text-align: right" class="${valorClass}">${prefix} ${formatCurrency(t.valor)}</td>
-                <td><button class="btn-delete" onclick="deleteTransaction(${t.id})" title="Excluir">🗑️</button></td>
+                <td><button class="btn" onclick="abrirRegistro(${t.id})" title="Conferir este lançamento">Revisar</button></td>
             </tr>
         `;
     }).join('');
@@ -381,8 +371,9 @@ function escapeHtml(value) {
 }
 
 function formatDate(dateStr) {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+    if (!dateStr) return 'Não informada';
+    const [ano, mes, dia] = String(dateStr).slice(0, 10).split('-');
+    return `${dia}/${mes}/${ano}`;
 }
 
 function getBadgeClass(metodo) {

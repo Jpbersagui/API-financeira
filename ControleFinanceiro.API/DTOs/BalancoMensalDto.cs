@@ -5,6 +5,7 @@ namespace ControleFinanceiro.API.DTOs
     /// </summary>
     public class BalancoMensalDto
     {
+        public ResumoFinanceiroDto? Financeiro { get; set; }
         public string Aviso => "Resumo dos lançamentos cadastrados. Estes valores ainda não representam saldo bancário confirmado.";
         public bool SaldoBancarioConfirmado => false;
         public int Mes { get; set; }

@@ -11,8 +11,14 @@ namespace ControleFinanceiro.API.DTOs
         public int? ContaId { get; set; }
         public string? ContaNome { get; set; }
         public bool SemConta => ContaId == null;
-        // Todos os lançamentos desta fase ainda pertencem ao modelo não reconciliado.
-        public string SituacaoFinanceira => "Não reconciliado";
+        public EstadoTransacao Estado { get; set; }
+        public OrigemRegistroTransacao? OrigemRegistro { get; set; }
+        public ClassificacaoPendenteTransacao? ClassificacaoPendente { get; set; }
+        public DateOnly? DataEfetivacao { get; set; }
+        public string Versao { get; set; } = "";
+        public bool CreditoLegado { get; set; }
+        public string? MotivoDesconsideracao { get; set; }
+        public string SituacaoFinanceira => Estado switch { EstadoTransacao.Confirmada => "Confirmado", EstadoTransacao.Desconsiderada => "Desconsiderado", _ => "Não reconciliado" };
         public string Titulo { get; set; } = string.Empty;
         public decimal Valor { get; set; }
         public DateTime Data { get; set; }

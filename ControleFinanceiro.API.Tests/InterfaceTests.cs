@@ -49,12 +49,13 @@ public class InterfaceTests(SqlFixture fixture) : IClassFixture<SqlFixture>
         await Assertions.Expect(page.Locator("#tx-conta option")).ToHaveCountAsync(1);
 
         // Associação de registro histórico à conta inativa pelo mês correspondente.
+        await page.Locator("#cadastro-antigo > summary").ClickAsync();
         await page.EvaluateAsync("() => { state.mes = 8; state.ano = 2026; return loadDashboard(); }");
         var legacy = page.Locator("#transactions-list tr").Filter(new() { HasText = "Histórico comum" });
         await legacy.Locator("select").SelectOptionAsync(new SelectOptionValue { Label = "Carteira editada <teste> (inativa)" });
-        await legacy.GetByRole(AriaRole.Button, new() { Name = "Associar conta" }).ClickAsync();
+        await legacy.GetByRole(AriaRole.Button, new() { Name = "Informar conta" }).ClickAsync();
         await Assertions.Expect(legacy.Locator("td").Nth(4).Locator("span")).ToHaveTextAsync("Carteira editada <teste>");
-        await Assertions.Expect(legacy).ToContainTextAsync("Não reconciliado");
+        await Assertions.Expect(legacy).ToContainTextAsync("Aguardando revisão");
 
         await account.GetByRole(AriaRole.Button, new() { Name = "Reativar", Exact = true }).ClickAsync();
         await Assertions.Expect(account).ToContainTextAsync("Ativa");

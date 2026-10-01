@@ -295,7 +295,7 @@ A presença de `ContaId` não pode ser utilizada como evidência de:
 * movimentação realizada;
 * impacto real no saldo.
 
-O mecanismo de confirmação e movimentação efetiva será tratado na fase correspondente do roadmap.
+Na Fase 2, a confirmação será uma ação explícita, independente da associação de conta, conforme a seção 38.
 
 ---
 
@@ -1135,3 +1135,81 @@ Não são prioridades neste momento:
 * sincronização em nuvem.
 
 Esses recursos somente devem ser adicionados futuramente se houver necessidade concreta.
+
+---
+
+# 38. Fase 2 — Decisões fechadas
+
+Estas regras definem o escopo de movimentações efetivas, abertura e saldo por conta. As descrições do domínio completo nas demais seções não antecipam funcionalidades de fases futuras.
+
+## 38.1 Abertura
+
+Representar a abertura por `DataAbertura` e `ValorAbertura` na própria Conta. Os campos devem estar preenchidos juntos ou ambos ausentes.
+
+A abertura é o saldo no início do dia informado, antes das movimentações daquele dia. Participa do saldo, mas não é receita. O valor pode ser positivo, zero ou negativo. Não permitir abertura futura.
+
+Conta sem abertura não possui saldo calculável. Exibir orientação para definir a abertura; não presumir zero. Para uma referência anterior à abertura, informar que o período não era acompanhado, sem inventar saldo.
+
+A correção da abertura deve ser uma ação específica, separada da edição de nome, tipo ou status. Alterar a data não pode excluir silenciosamente movimentos confirmados do período acompanhado: bloquear a operação com informação dos registros afetados até revisão explícita. Corrigir a abertura recalcula os saldos sob demanda, sem criar receita ou despesa compensatória automática.
+
+## 38.2 Registro realizado e compatibilidade
+
+Novos movimentos comuns devem utilizar fluxo explícito de pagamento ou recebimento realizado. Exigir conta ativa com abertura, valor positivo e data efetiva não futura dentro do período acompanhado.
+
+O endpoint legado de criação continua temporariamente como cadastro não reconciliado. Não mudar silenciosamente seu significado financeiro. Associação de conta continua sendo apenas organização.
+
+Registros antigos podem ser confirmados manualmente, com conta e data de efetivação explícitas. A confirmação repetida não pode duplicar o registro ou seu efeito. Histórico confirmado anterior à abertura é preservado, mas não participa do saldo acompanhado.
+
+Não utilizar `ContaId` como evidência de realização. Não utilizar o estado não reconciliado como substituto de previsão ou obrigação pendente.
+
+## 38.3 Revisão e correção
+
+Registro antigo incorreto deve ser desconsiderado com motivo, preservando seus dados em vez de ser excluído fisicamente.
+
+Movimento confirmado não pode ser alterado silenciosamente por edição, associação ou exclusão comuns. Deve existir ação específica de correção. Pode ser utilizado um histórico simples de revisões, sem infraestrutura complexa de auditoria ou event sourcing.
+
+Desconsiderar ou corrigir um registro ajusta a representação no sistema; não significa que ocorreu devolução de dinheiro. Uma devolução efetiva é outra movimentação.
+
+## 38.4 Contas inativas
+
+Não aceitam novos movimentos comuns. Continuam permitindo saldo e extrato, participam do consolidado e permitem associação, confirmação e correção de histórico antigo. Inativar não zera saldo nem apaga vínculos.
+
+## 38.5 Crédito e transferências próprias
+
+Crédito legado permanece fora do saldo e do extrato bancário realizado. Preservar sua origem para impedir que mudar o método de pagamento permita confirmar uma compra antiga como movimentação bancária.
+
+Se uma fatura antiga foi paga após a abertura, o usuário pode registrar manualmente a saída como movimento comum. Não criar vínculo com compras, parcelas ou faturas nesta fase. Não promover os totais legados de consumo a indicadores financeiros confirmados.
+
+Registros antigos identificados pelo usuário como transferência entre contas próprias devem permanecer para classificação futura, sem confirmação como receita ou despesa. O método `Transferencia` sozinho não identifica transferência própria. A indicação para classificação futura não cria a entidade ou a operação financeira de transferência.
+
+## 38.6 Saldo e consolidado
+
+Para referência igual ou posterior à abertura:
+
+```text
+Saldo calculado = ValorAbertura
+               + receitas confirmadas desde a abertura até a referência
+               - despesas confirmadas desde a abertura até a referência
+```
+
+Incluir movimentos do próprio dia de abertura. Excluir não reconciliados, desconsiderados, crédito legado, transferências próprias aguardando classificação e histórico anterior à abertura.
+
+O consolidado soma as contas calculáveis na mesma referência, inclusive inativas. Quando uma conta não tiver abertura ou a referência anteceder sua abertura, listar a conta e o motivo de exclusão e indicar que o total é parcial. Informar também pendências de revisão conhecidas; confirmação manual não garante ausência de movimentos esquecidos.
+
+Usar o termo **Saldo calculado** na interface. Não persistir o saldo atual como campo mutável.
+
+## 38.7 Extrato e dashboard
+
+Extrato por conta deve conter saldo inicial, movimentos confirmados e saldo final. Ordenação: `DataEfetivacao` crescente, depois `Id` crescente. O desempate não representa horário bancário conhecido.
+
+Filtros de início e fim são inclusivos. O saldo inicial considera abertura e movimentos anteriores ao intervalo dentro do acompanhamento. A abertura pode ser exibida como linha informativa, sem receita. Se o intervalo começar antes da abertura, indicar o trecho não acompanhado; se estiver inteiramente antes, o saldo é indisponível. Não projetar saldos futuros nesta fase. Se houver paginação, considerar movimentos anteriores à página.
+
+Não reconciliados aparecem separadamente para revisão. No dashboard, distinguir saldo atual, posição no período selecionado e movimentos confirmados do período. Indicadores antigos permanecem explicitamente legados, separados dos novos indicadores calculados; não somar ambos nem mudar silenciosamente a semântica dos campos existentes.
+
+## 38.8 Datas, migration e limites
+
+Utilizar `DateOnly` para `DataAbertura`, `DataEfetivacao`, referência de saldo e filtros do extrato. Preservar `Transacao.Data` como `DateTime`, sem converter a coluna antiga ou inferir automaticamente a efetivação.
+
+A migration deve ser expansiva, preservar dados e migrations antigas, manter abertura não informada nas contas existentes e todos os registros existentes não reconciliados. Validar em banco isolado antes de qualquer aplicação ao banco pessoal.
+
+Não implementar previsões, domínio de cartões, faturas, novas regras de parcelas, recorrências ou transferências entre contas próprias. O salário automático continua suspenso. Nada exige execução contínua da aplicação.

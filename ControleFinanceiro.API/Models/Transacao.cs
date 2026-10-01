@@ -15,6 +15,14 @@ namespace ControleFinanceiro.API.Models
         // Associação organiza o histórico; não confirma pagamento ou recebimento.
         public int? ContaId { get; set; }
         public Conta? Conta { get; set; }
+        public EstadoTransacao Estado { get; set; } = EstadoTransacao.NaoReconciliada;
+        public OrigemRegistroTransacao? OrigemRegistro { get; set; }
+        public ClassificacaoPendenteTransacao? ClassificacaoPendente { get; set; }
+        public DateOnly? DataEfetivacao { get; set; }
+        public DateTimeOffset? ConfirmadaEm { get; set; }
+        public DateTimeOffset? DesconsideradaEm { get; set; }
+        public string? MotivoDesconsideracao { get; set; }
+        public byte[] Versao { get; set; } = [];
 
         [Required(ErrorMessage = "O título é obrigatório.")]
         [MaxLength(200, ErrorMessage = "O título deve ter no máximo 200 caracteres.")]

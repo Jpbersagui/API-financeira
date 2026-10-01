@@ -29,11 +29,79 @@
             </div>
         </header>
 
-        <p id="resumo-aviso" class="transition-notice" role="note">Resumo dos lançamentos cadastrados. Estes valores ainda não representam saldo bancário confirmado.</p>
+        <section class="section-card finance-section" aria-labelledby="finance-title">
+            <h2 id="finance-title">Saldo calculado</h2>
+            <p>Calculado com o saldo inicial e os pagamentos e recebimentos confirmados. Lançamentos aguardando revisão não estão incluídos.</p>
+            <div id="finance-resumo" role="status">Carregando posição financeira…</div>
+            <nav class="quick-actions" aria-label="Ações financeiras">
+                <button class="btn btn--success" type="button" onclick="novoMovimento('Receita')">Recebi dinheiro</button>
+                <button class="btn btn--primary" type="button" onclick="novoMovimento('Despesa')">Paguei uma despesa</button>
+                <button class="btn" type="button" onclick="abrirAbertura()">Informar saldo inicial</button>
+                <button class="btn" type="button" onclick="abrirExtrato()">Ver extrato</button>
+                <button class="btn" type="button" onclick="abrirRevisao()">Revisar lançamentos</button>
+                <button class="btn" type="button" onclick="focar('conta-nome')">Cadastrar conta</button>
+            </nav>
+            <ul id="finance-contas" class="accounts-list"></ul>
+            <details id="abertura-painel">
+                <summary>Informar ou corrigir saldo inicial</summary>
+                <p>Quanto havia nesta conta no início desse dia, antes dos pagamentos e recebimentos? Esse valor não será registrado como receita. Pode ser positivo, zero ou negativo.</p>
+                <form id="form-abertura" class="form-grid">
+                    <div class="form-group"><label for="ab-conta">Conta</label><select id="ab-conta" required></select></div>
+                    <div class="form-group"><label for="ab-data">Começar a acompanhar em</label><input id="ab-data" type="date" required></div>
+                    <div class="form-group"><label for="ab-valor">Saldo no início do dia (R$)</label><input id="ab-valor" type="number" step="0.01" required></div>
+                    <button id="ab-salvar" class="btn btn--primary" type="submit">Salvar saldo inicial</button>
+                </form>
+                <p id="ab-feedback" role="status"></p>
+                <button class="btn" type="button" onclick="abrirRevisao(el('ab-conta').value, 'Confirmada')">Revisar lançamentos desta conta</button>
+            </details>
+        </section>
+
+        <section class="section-card finance-section" aria-labelledby="mov-title">
+            <h2 id="mov-title">Novo pagamento</h2>
+            <p id="mov-ajuda">Registre somente dinheiro que já saiu da conta.</p>
+            <form id="form-realizado" class="form-grid">
+                <div class="form-group"><label for="mov-tipo">O que aconteceu?</label><select id="mov-tipo"><option value="Despesa">Paguei uma despesa</option><option value="Receita">Recebi dinheiro</option></select></div>
+                <div class="form-group"><label for="mov-conta">Conta</label><select id="mov-conta" required></select></div>
+                <div class="form-group"><label id="mov-data-label" for="mov-data">Data do pagamento</label><input id="mov-data" type="date" required></div>
+                <div class="form-group"><label for="mov-titulo">Descrição</label><input id="mov-titulo" maxlength="200" required></div>
+                <div class="form-group"><label for="mov-valor">Valor (R$)</label><input id="mov-valor" type="number" min="0.01" step="0.01" required></div>
+                <div class="form-group"><label for="mov-categoria">Categoria</label><input id="mov-categoria" maxlength="100" required></div>
+                <div class="form-group"><label for="mov-metodo">Como o dinheiro foi movimentado?</label><select id="mov-metodo"><option value="Pix">Pix</option><option value="Debito">Débito</option><option value="Dinheiro">Dinheiro</option><option value="Transferencia">Transferência de/para terceiros</option></select></div>
+                <div class="form-group" id="mov-motivo-group" hidden><label for="mov-motivo">Motivo da correção</label><input id="mov-motivo" maxlength="500" disabled></div>
+                <button id="mov-salvar" class="btn btn--primary" type="submit">Registrar pagamento</button>
+                <button id="mov-cancelar" class="btn" type="button" hidden>Cancelar revisão</button>
+            </form>
+            <p id="mov-conta-ajuda" role="status"></p>
+            <button id="mov-definir-abertura" type="button" class="btn" hidden onclick="abrirAbertura(el('mov-conta').value)">Informar saldo inicial desta conta</button>
+            <p id="mov-feedback" role="status"></p>
+        </section>
+
+        <section class="section-card finance-section" aria-labelledby="extrato-title">
+            <h2 id="extrato-title" tabindex="-1">Extrato da conta</h2>
+            <p>Somente pagamentos e recebimentos confirmados. O período abaixo é independente do mês selecionado no topo.</p>
+            <button class="btn" type="button" onclick="usarMesExtrato()">Usar mês selecionado</button>
+            <form id="form-extrato" class="form-grid">
+                <div class="form-group"><label for="ex-conta">Conta</label><select id="ex-conta" required></select></div>
+                <div class="form-group"><label for="ex-inicio">Início</label><input id="ex-inicio" type="date" required></div>
+                <div class="form-group"><label for="ex-fim">Fim</label><input id="ex-fim" type="date" required></div>
+                <button class="btn btn--primary" type="submit">Consultar extrato</button>
+            </form>
+            <div id="extrato-resultado" aria-live="polite"></div>
+        </section>
+
+        <section class="section-card finance-section" aria-labelledby="revisao-title">
+            <h2 id="revisao-title" tabindex="-1">Revisar lançamentos</h2>
+            <p>Confira se estes lançamentos realmente aconteceram. Os que aguardam revisão não entram no saldo calculado. Esta lista inclui todos os meses.</p>
+            <label for="rev-estado">Exibir</label>
+            <select id="rev-estado"><option value="NaoReconciliada">Aguardando revisão</option><option value="Confirmada">Confirmados</option><option value="Desconsiderada">Desconsiderados</option></select>
+            <label for="rev-conta">Conta</label><select id="rev-conta"><option value="">Todas as contas, incluindo sem conta</option></select>
+            <div id="revisao-lista" aria-live="polite"></div>
+        </section>
 
         <section class="section-card accounts-section" aria-labelledby="contas-title">
             <h2 id="contas-title" class="section-card__title">Contas</h2>
             <p>Organize seus lançamentos por conta. Associar uma conta não confirma pagamento ou recebimento.</p>
+            <p>Contas inativas não aceitam novos pagamentos ou recebimentos. Seu saldo e histórico continuam disponíveis e participam do total.</p>
             <form id="form-conta" class="form-grid">
                 <div class="form-group"><label for="conta-nome">Nome da conta</label><input id="conta-nome" required maxlength="100" placeholder="Ex.: Nubank, carteira"></div>
                 <div class="form-group"><label for="conta-tipo">Tipo de conta</label><select id="conta-tipo" required><option value="ContaCorrente">Conta corrente</option><option value="Poupanca">Poupança</option><option value="Carteira">Carteira</option></select></div>
@@ -44,6 +112,10 @@
             <ul id="contas-lista" class="accounts-list"></ul>
         </section>
 
+        <details id="cadastro-antigo" class="section-card legacy-section">
+        <summary>Resumo e cadastro antigos</summary>
+        <p id="resumo-aviso" class="transition-notice" role="note">Resumo dos lançamentos cadastrados. Estes valores ainda não representam saldo bancário confirmado.</p>
+        <p>Estes números incluem registros ainda não revisados. Para dinheiro que já entrou ou saiu da conta, use “Recebi dinheiro” ou “Paguei uma despesa”.</p>
         <!-- ══════════ SUMMARY CARDS ══════════ -->
         <section class="summary-cards" id="summary-cards">
             <div class="summary-card summary-card--saldo">
@@ -72,11 +144,11 @@
             </div>
             <div class="summary-card summary-card--previsto">
                 <div class="summary-card__header">
-                    <span class="summary-card__label">Previsto (Futuro)</span>
+                    <span class="summary-card__label">Lançamentos futuros do cadastro antigo</span>
                     <div class="summary-card__icon">📅</div>
                 </div>
                 <div class="summary-card__value" id="card-previsto">R$ 0,00</div>
-                <div class="summary-card__detail">Parcelas e despesas futuras</div>
+                <div class="summary-card__detail">Cadastros futuros; não compõem o saldo calculado</div>
             </div>
         </section>
 
@@ -84,7 +156,8 @@
         <div class="main-grid">
             <!-- LEFT: Transaction Form -->
             <div class="section-card">
-                <h2 class="section-card__title"><span>➕</span> Nova Transação</h2>
+                <h2 class="section-card__title"><span>➕</span> Cadastro antigo — aguarda revisão</h2>
+                <p>Cadastrar aqui não altera o saldo calculado. Compras no cartão continuam disponíveis neste cadastro, sem registrar saída bancária.</p>
                 <form id="form-transacao" class="form-grid">
                     <!-- Tipo Toggle -->
                     <div class="toggle-row">
@@ -194,7 +267,7 @@
 
                 <!-- Forecast -->
                 <div class="section-card">
-                    <h2 class="section-card__title"><span>🔮</span> Previsão Futura</h2>
+                    <h2 class="section-card__title">Lançamentos futuros do cadastro antigo</h2>
                     <div id="forecast-list" class="forecast-list">
                         <div class="empty-state">
                             <div class="empty-state__text">Sem parcelas futuras</div>
@@ -239,9 +312,35 @@
                 </div>
             </div>
         </section>
+        </details>
     </div>
 
+    <dialog id="registro-dialog" aria-labelledby="registro-title">
+        <button type="button" class="btn" onclick="el('registro-dialog').close()">Fechar</button>
+        <h2 id="registro-title">Conferir lançamento</h2>
+        <div id="registro-contexto"></div>
+        <p id="registro-aviso"></p>
+        <div id="registro-acoes" class="quick-actions"></div>
+        <form id="form-editar-antigo" class="form-grid" hidden>
+            <div class="form-group"><label for="antigo-titulo">Descrição</label><input id="antigo-titulo" required></div>
+            <div class="form-group"><label for="antigo-valor">Valor (R$)</label><input id="antigo-valor" type="number" min="0.01" step="0.01" required></div>
+            <div class="form-group"><label for="antigo-tipo">Tipo</label><select id="antigo-tipo"><option value="Despesa">Pagamento</option><option value="Receita">Recebimento</option></select></div>
+            <div class="form-group"><label for="antigo-categoria">Categoria</label><input id="antigo-categoria" required></div>
+            <p>Apenas corrige o cadastro. A confirmação será feita separadamente, com conta e data do pagamento ou recebimento.</p>
+            <button class="btn btn--primary" type="submit">Salvar dados sem confirmar</button>
+        </form>
+        <form id="form-desconsiderar" hidden>
+            <p>Este lançamento deixará de participar do saldo calculado, mas continuará no histórico. Isso não registra devolução de dinheiro.</p>
+            <label for="desconsiderar-motivo">Por que este lançamento está incorreto?</label>
+            <textarea id="desconsiderar-motivo" required maxlength="500"></textarea>
+            <button class="btn" type="button" onclick="el('form-desconsiderar').hidden = true">Cancelar</button>
+            <button class="btn btn--primary" type="submit">Desconsiderar lançamento</button>
+        </form>
+        <p id="registro-feedback" role="status"></p>
+        <div id="registro-revisoes"></div>
+    </dialog>
     <script src="js/app.js"></script>
     <script src="js/contas.js"></script>
+    <script src="js/movimentacoes.js"></script>
 </body>
 </html>

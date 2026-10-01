@@ -69,7 +69,7 @@ Id
 Nome
 Tipo
 Ativa
-DataInicioAcompanhamento
+DataAbertura
 ValorAbertura
 ```
 
@@ -101,13 +101,11 @@ Esse valor representa abertura financeira.
 
 Não é uma receita.
 
-A implementação pode representar isso através:
+A decisão da Fase 2 é utilizar campos na própria Conta: `DataAbertura` (`DateOnly?`) e `ValorAbertura` (`decimal?`). Ambos são informados juntos. Ausência não equivale a abertura zero.
 
-* de propriedades da conta;
-* de um lançamento especial;
-* de outra estratégia equivalente.
+A posição vale no início do dia, antes dos movimentos daquele dia. Aceitar valor positivo, zero ou negativo; rejeitar data futura. Abertura não é receita nem transação especial.
 
-A escolha técnica deve preservar a semântica de que dinheiro existente antes do sistema não é receita.
+Corrigir abertura exige ação específica. Uma alteração de data que retire movimentos confirmados do período acompanhado deve ser bloqueada até revisão explícita. Consultas anteriores à abertura não possuem saldo conhecido.
 
 ---
 
@@ -968,7 +966,7 @@ Movimentação confirmada
 
 e não pode ser utilizado como critério para determinar que dinheiro efetivamente entrou ou saiu da conta.
 
-Até que o modelo de movimentação realizada seja implementado, registros do modelo antigo permanecem não reconciliados independentemente de possuírem ou não uma conta associada.
+Na Fase 1, todos os registros permanecem não reconciliados. Na Fase 2, continuam assim até confirmação manual explícita; a associação de conta não substitui essa confirmação.
 
 ---
 
@@ -1138,8 +1136,6 @@ As seguintes regras devem sempre ser preservadas:
 
 Devem ser resolvidas somente na fase correspondente:
 
-* estrutura exata de abertura de conta;
-* forma técnica do estado legado não revisado;
 * entidade explícita ou não para ocorrência recorrente;
 * estratégia de versionamento de recorrências;
 * representação técnica de transferências;
@@ -1155,6 +1151,70 @@ Devem ser resolvidas somente na fase correspondente:
 * política de arredondamento;
 * importação de cartões legados;
 * conversão das parcelas antigas;
-* tratamento de datas de transações antigas.
+* conversão ou aposentadoria futura da coluna antiga `Transacao.Data`, preservada na Fase 2.
 
 Não assumir silenciosamente uma dessas regras.
+
+---
+
+# 42. Modelo da Fase 2 — Decisões fechadas e desenho de implementação
+
+## 42.1 Transição da entidade Transacao
+
+A tabela existente será preservada para compatibilidade. Enquanto contiver registros legados, nem toda linha é uma movimentação efetiva. Apenas uma confirmação explícita e elegível estabelece a realização. Isso é uma exceção transitória ao modelo conceitual final, não uma modelagem de previsão dentro de Transacao.
+
+Desenho mínimo recomendado:
+
+```text
+EstadoTransacao: NaoReconciliada | Confirmada | Desconsiderada
+DataEfetivacao: DateOnly?
+ConfirmadaEm: DateTimeOffset?
+DesconsideradaEm: DateTimeOffset?
+MotivoDesconsideracao: string?
+OrigemRegistro: identificação preservada de legado comum, crédito legado ou novo realizado
+ClassificacaoPendente: indicação de transferência própria aguardando fase futura, quando identificada pelo usuário
+Versao: controle de concorrência
+```
+
+Os nomes técnicos podem ser ajustados sem mudar as regras. A origem de crédito não pode ser removida pela simples edição de método. Ao migrar, considerar também os vínculos existentes de parcelamento; inconsistências não autorizam confirmação automática.
+
+Confirmação exige conta e data efetiva explícitas. Crédito legado e transferência própria identificada não são elegíveis. Valor é positivo, com direção dada pelo tipo; data efetiva não pode ser futura. A presença de `ContaId` não define o estado.
+
+Novo realizado exige conta ativa e abertura configurada, com data dentro do acompanhamento. Histórico pode ser confirmado em conta inativa e pode ser anterior à abertura, permanecendo fora do saldo acompanhado. Confirmação repetida não insere outro movimento; conflito de dados deve ser informado.
+
+`Transacao.Data` continua `DateTime` e preserva a data antiga. `DataEfetivacao` é outro campo e não recebe preenchimento automático na migration. Instantes de confirmação/revisão podem usar UTC; datas financeiras usam calendário local. Utilizar referência temporal testável, como `TimeProvider`.
+
+## 42.2 Revisão sem infraestrutura de auditoria complexa
+
+Utilizar `RevisaoTransacao` para histórico simples das correções, guardando referência ao registro, instante, motivo e valores anteriores/posteriores relevantes. Ela não será fonte de reconstrução de saldo e não exige event sourcing.
+
+Os endpoints comuns não alteram campos financeiros, associação ou exclusão de movimentos confirmados. A correção explícita valida as mesmas invariantes e grava mudança/revisão atomicamente. Desconsideração preserva o registro e seu motivo, retirando seu efeito do saldo; não cria um estorno bancário fictício.
+
+## 42.3 Cálculos
+
+Para uma conta com abertura `A` e referência `D >= A`, somar somente movimentos elegíveis com estado Confirmada e `A <= DataEfetivacao <= D`:
+
+```text
+Saldo(D) = ValorAbertura + ReceitasConfirmadas(A..D) - DespesasConfirmadas(A..D)
+```
+
+Histórico confirmado anterior a A não entra no saldo acompanhado. Conta sem abertura ou referência anterior a A tem saldo indisponível, nunca zero presumido.
+
+Consolidado usa a mesma referência para todas as contas e inclui contas inativas. Deve retornar total calculável, indicação de cobertura parcial e contas excluídas com motivo. O nome apresentado é Saldo calculado.
+
+Extrato é DTO/consulta, com saldo inicial, linhas e saldo final. Ordenar por DataEfetivacao e Id crescentes. Não reconciliados ficam em consulta de revisão separada. Preservar o saldo anterior ao intervalo e, se houver paginação, à página. A linha de abertura não participa dos totais de receita.
+
+## 42.4 Organização técnica
+
+Manter projeto único, EF Core e frontend existente. Introduzir somente dois serviços com regras suficientes:
+
+* `MovimentacaoService`: abertura, realização explícita, confirmação, correção, desconsideração e validações de transição.
+* `SaldoService`: saldo por conta, consolidado, extrato e totais realizados necessários ao dashboard.
+
+Preservar o endpoint legado de criação como não reconciliado. Criar operações explícitas para realização e revisão. Acrescentar bloco financeiro aos DTOs de resumo, sem reinterpretar os campos legados.
+
+## 42.5 Limites da fase
+
+Não criar `Previsao`, `PrevisaoId`, `CartaoCredito`, `Fatura`, recorrência ou operação de transferência. Uma saída manual correspondente a fatura antiga não possui vínculo com compras. A classificação de transferência própria somente impede sua confirmação indevida.
+
+Conta permanece sem saldo persistido. Abertura é um fato informado, não um acumulador. A migration é expansiva; não confirma registros, não presume abertura zero e não converte datas antigas.

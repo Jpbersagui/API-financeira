@@ -22,6 +22,9 @@ public sealed class SqlFixture : IAsyncLifetime
     public string AfterMigration { get; private set; } = "";
     public int StartupTransactionCount { get; private set; }
     public int AccountsAfterMigration { get; private set; }
+    public bool SeedFase1 { get; init; }
+    public string BeforeFase2 { get; private set; } = "";
+    public string AfterFase2 { get; private set; } = "";
 
     public SqlFixture()
     {
@@ -53,7 +56,12 @@ public sealed class SqlFixture : IAsyncLifetime
             SET IDENTITY_INSERT Salarios OFF;
             """);
         BeforeMigration = await Snapshot();
+        await db.GetService<IMigrator>().MigrateAsync("20260923203445_AdicionarContas");
+        if (SeedFase1)
+            await db.Database.ExecuteSqlRawAsync("INSERT INTO Contas (Nome, Tipo, Ativa) VALUES (N'Conta antiga', 'ContaCorrente', 0); UPDATE Transacoes SET ContaId = (SELECT TOP 1 Id FROM Contas) WHERE Id = 101;");
+        BeforeFase2 = await SnapshotContas();
         await db.Database.MigrateAsync();
+        AfterFase2 = await SnapshotContas();
         AfterMigration = await Snapshot();
         AccountsAfterMigration = await db.Contas.CountAsync();
         Factory = new ApiFactory(ConnectionString);
@@ -71,6 +79,15 @@ public sealed class SqlFixture : IAsyncLifetime
             FROM Transacoes ORDER BY Id FOR JSON PATH, INCLUDE_NULL_VALUES)
             + (SELECT Id,Valor,DiaPagamento,Ativo,DataInicio,DataFim FROM Salarios ORDER BY Id FOR JSON PATH, INCLUDE_NULL_VALUES)
             """;
+        return (string)(await command.ExecuteScalarAsync())!;
+    }
+
+    private async Task<string> SnapshotContas()
+    {
+        await using var connection = new SqlConnection(ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COALESCE((SELECT Id,Nome,Tipo,Ativa FROM Contas ORDER BY Id FOR JSON PATH, INCLUDE_NULL_VALUES), '[]') + COALESCE((SELECT Id,ContaId FROM Transacoes ORDER BY Id FOR JSON PATH, INCLUDE_NULL_VALUES), '[]')";
         return (string)(await command.ExecuteScalarAsync())!;
     }
 
@@ -98,6 +115,14 @@ public sealed class ApiFactory(string connectionString) : WebApplicationFactory<
             services.RemoveAll<DbContextOptions<AppDbContext>>();
             services.RemoveAll<AppDbContext>();
             services.AddDbContext<AppDbContext>(o => o.UseSqlServer(connectionString));
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(new TestClock());
         });
     }
+}
+
+public sealed class TestClock : TimeProvider
+{
+    public override DateTimeOffset GetUtcNow() => new(2026, 10, 31, 12, 0, 0, TimeSpan.Zero);
+    public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.Utc;
 }

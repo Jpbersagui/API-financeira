@@ -408,7 +408,7 @@ Comandos, cobertura e decisões transitórias estão em `../../ControleFinanceir
 
 A inicialização normal continua aplicando migrations pendentes ao banco configurado. Fazer backup antes da primeira execução com esta versão.
 
-Fase 2 não iniciada.
+Na conclusão da Fase 1, a Fase 2 ainda não havia sido iniciada. Seu resultado está registrado abaixo.
 
 ---
 
@@ -417,7 +417,7 @@ Fase 2 não iniciada.
 Status:
 
 ```text
-[ ]
+[x]
 ```
 
 ## Objetivo
@@ -428,21 +428,37 @@ Transformar `Transacao` em representação clara de dinheiro efetivamente movime
 
 ## Implementar
 
-* abertura financeira da conta;
-* data de início do acompanhamento;
-* entradas realizadas;
-* saídas realizadas;
-* saldo por conta;
-* saldo consolidado;
-* extrato básico;
-* revisão progressiva do legado;
-* indicação de histórico ainda não confirmado.
+* `DataAbertura` e `ValorAbertura` na Conta, informados juntos;
+* abertura no início do dia, sem classificá-la como receita;
+* abertura positiva, zero ou negativa, sem data futura;
+* conta sem abertura com saldo indisponível, nunca zero presumido;
+* ação específica de correção da abertura, bloqueando exclusão silenciosa de movimentos confirmados por mudança de data;
+* fluxo explícito para registrar pagamento/recebimento realizado em conta ativa com abertura;
+* manutenção do endpoint legado de criação como não reconciliado;
+* confirmação manual e idempotente de histórico, independente de associação;
+* histórico confirmado anterior à abertura preservado e excluído do saldo acompanhado;
+* confirmação/correção de histórico em conta inativa, sem permitir novos movimentos comuns nela;
+* desconsideração de registros incorretos com motivo, sem exclusão física;
+* correção explícita de confirmados, com histórico mínimo `RevisaoTransacao`;
+* proteção dos endpoints comuns contra alteração silenciosa de movimentos confirmados;
+* preservação da origem de crédito, impedindo confirmação bancária mesmo após mudança do método;
+* indicação de transferência própria para classificação futura, bloqueando confirmação indevida sem implementar transferências;
+* saldo calculado por conta e consolidado, incluindo inativas e informando cobertura parcial;
+* extrato com saldo inicial, linhas e saldo final; revisão em lista separada;
+* bloco financeiro no dashboard, separado dos indicadores legados;
+* `DateOnly` nas novas datas financeiras e preservação integral de `Transacao.Data` como `DateTime`.
 
 ---
 
 ## Regra principal
 
-Somente movimentações efetivas alteram saldo.
+```text
+Saldo calculado = ValorAbertura
+               + receitas confirmadas desde a abertura até a referência
+               - despesas confirmadas desde a abertura até a referência
+```
+
+Não entram não reconciliados, desconsiderados, crédito legado, transferências próprias aguardando classificação nem histórico anterior à abertura. Conta sem abertura ou referência anterior à abertura não é calculável. O consolidado lista contas excluídas e indica total parcial.
 
 ---
 
@@ -456,16 +472,150 @@ Começar a acompanhar esta conta em DD/MM/AAAA com R$ X.
 
 Esse valor não deve ser receita.
 
+Significa a posição antes das movimentações daquele dia. A correção usa ação específica e não gera movimento compensatório automático. Alteração de data com impacto na inclusão de confirmados fica bloqueada até revisão explícita.
+
+## Extrato e interface
+
+Usar o termo Saldo calculado. Ordenar linhas por DataEfetivacao crescente e Id crescente. Filtros de datas inclusivos; informar o início efetivamente acompanhado e posição indisponível antes da abertura. Não apresentar projeção futura. O backend calcula os saldos, inclusive o anterior à página se houver paginação.
+
+Exibir não reconciliados separadamente. Dashboard distingue saldo atual, referência histórica e movimentos confirmados do mês. Preservar os campos e indicadores antigos como legado identificado, sem somá-los aos novos.
+
+## Compatibilidade e limites
+
+O cadastro de salário permanece, sem geração automática. Crédito legado continua no fluxo antigo, fora do saldo bancário. Pagamento de fatura antiga pode ser registrado manualmente como saída comum, sem vínculo com compras.
+
+Não implementar previsões, cartões, faturas, novas regras de parcelamento, recorrências ou transferências. As decisões fechadas estão em REQUIREMENTS.md, seção 38, e DOMAIN_MODEL.md, seção 42.
+
+## Arquivos existentes previstos
+
+```text
+Models/Conta.cs
+Models/Transacao.cs
+Data/AppDbContext.cs
+DTOs/ContaReadDto.cs
+DTOs/TransacaoReadDto.cs
+DTOs/DashboardDto.cs
+DTOs/BalancoMensalDto.cs
+Controllers/ContasController.cs
+Controllers/TransacoesController.cs
+Controllers/DashboardController.cs
+Program.cs
+wwwroot/index.html
+wwwroot/js/app.js
+wwwroot/js/contas.js
+wwwroot/css/style.css
+Migrations/AppDbContextModelSnapshot.cs
+docs/REQUIREMENTS.md
+docs/DOMAIN_MODEL.md
+docs/ROADMAP.md
+../ControleFinanceiro.API.Tests/SqlFixture.cs
+../ControleFinanceiro.API.Tests/Fase1Tests.cs
+../ControleFinanceiro.API.Tests/InterfaceTests.cs
+../ControleFinanceiro.API.Tests/README.md
+```
+
+Preservar os DTOs de criação/edição legados sempre que possível; ações explícitas recebem contratos próprios.
+
+## Arquivos novos previstos
+
+```text
+Enums/EstadoTransacao.cs
+Enums/OrigemRegistroTransacao.cs
+Enums/ClassificacaoPendenteTransacao.cs
+Models/RevisaoTransacao.cs
+Services/MovimentacaoService.cs
+Services/SaldoService.cs
+DTOs/AberturaContaDto.cs
+DTOs/TransacaoRealizadaCreateDto.cs
+DTOs/ConfirmarTransacaoDto.cs
+DTOs/CorrigirTransacaoDto.cs
+DTOs/DesconsiderarTransacaoDto.cs
+DTOs/ClassificarHistoricoDto.cs
+DTOs/SaldoContaDto.cs
+DTOs/SaldoConsolidadoDto.cs
+DTOs/ExtratoContaDto.cs
+DTOs/ResumoFinanceiroDto.cs
+wwwroot/js/movimentacoes.js
+Migrations/<timestamp>_AdicionarAberturaEConfirmacao.cs
+Migrations/<timestamp>_AdicionarAberturaEConfirmacao.Designer.cs
+../ControleFinanceiro.API.Tests/AberturaTests.cs
+../ControleFinanceiro.API.Tests/SaldoTests.cs
+../ControleFinanceiro.API.Tests/ReconciliacaoTests.cs
+../ControleFinanceiro.API.Tests/ExtratoTests.cs
+../ControleFinanceiro.API.Tests/Fase2MigrationTests.cs
+../ControleFinanceiro.API.Tests/Fase2InterfaceTests.cs
+```
+
+## Migration prevista
+
+`AdicionarAberturaEConfirmacao`: adicionar abertura nullable na Conta; estado, origem, classificação pendente, data efetiva, metadados de confirmação/desconsideração e controle de concorrência; histórico simples de revisão; índices e restrições coerentes.
+
+Não preencher abertura, não confirmar registros existentes, não converter Transacao.Data e não alterar migrations anteriores. Preservar IDs, valores, contas, salários e vínculos de parcelas. Identificar crédito pelos dados estruturais existentes sem inferir pagamento. Verificar a sequência de migrations também em bancos ainda anteriores à Fase 1.
+
+## Testes previstos
+
+* abertura positiva, zero, negativa, incompleta e futura;
+* abertura fora dos totais de receita e proteção de correção com impacto;
+* saldo indisponível sem abertura e antes da data inicial;
+* movimento no dia da abertura incluído, histórico anterior excluído;
+* confirmação explícita, repetição idempotente e conflitos concorrentes;
+* preservação de conta/data/valor e registro de revisão em correções;
+* desconsideração com motivo e sem exclusão física;
+* endpoints comuns não contornam proteção de confirmados;
+* conta inativa preserva saldo/extrato e permite revisão histórica;
+* novo realizado exige conta ativa com abertura e data não futura;
+* origem de crédito impede efeito bancário, inclusive após mudança de método;
+* transferência própria identificada não é confirmada como receita/despesa;
+* consolidado inclui inativas e identifica contas sem saldo calculável;
+* extrato ordenado, mesmo dia, intervalo vazio, limites e saldos inicial/final;
+* paginação correta, caso implementada;
+* calendário local e referência temporal controlada;
+* migration preserva todo o histórico sem confirmar ou criar abertura;
+* contratos distinguem resumos legados de indicadores realizados;
+* interface de abertura, realização, revisão, correção, desconsideração e extrato;
+* regressões da Fase 1 e salário automático ainda suspenso.
+
+Executar testes relacionais em bancos isolados. Não usar o banco pessoal. Backup restaurável antes de aplicar a migration pessoalmente; a inicialização normal ainda aplica migrations pendentes.
+
 ---
 
 ## Critérios de conclusão
 
-* saldo por conta funciona;
-* saldo consolidado funciona;
-* abertura não conta como receita;
-* registros não revisados não são apresentados silenciosamente como saldo confirmado;
-* extrato básico funciona;
-* saldo usa somente fatos considerados realizados.
+* regras de abertura e correção implementadas e testadas;
+* fluxo explícito de realizado e compatibilidade legada preservados;
+* confirmação, correção e desconsideração respeitam conta, origem e datas;
+* saldo por conta e consolidado calculados sem inferências, com cobertura parcial explícita;
+* extrato realizado separado da revisão do legado;
+* interface utiliza Saldo calculado e distingue métricas antigas;
+* migration expansiva validada e migrations antigas preservadas;
+* build e testes relevantes aprovados;
+* nenhuma funcionalidade da Fase 3 ou posterior implementada.
+
+## Preparação
+
+Decisões de negócio fechadas em 30/09/2026 e implementadas exclusivamente no escopo desta fase.
+
+## Resultado da implementação
+
+Validada em 30/09/2026: build Release da API e do projeto de testes com zero avisos e zero erros; 49 testes aprovados, nenhum ignorado (23 da Fase 1 e 26 casos novos da Fase 2). Inclui dois fluxos de interface no Edge headless, concorrência de confirmação, calendário local e correção entre contas.
+
+Migration `20260930202014_AdicionarAberturaEConfirmacao` gerada e validada exclusivamente em bancos SQL Server isolados, partindo das migrations anteriores com histórico sintético. Preservados valores, IDs, datas, contas, salários e vínculos de parcelas. Migrations antigas intactas. Nenhuma migration foi aplicada ao banco pessoal. Verificação EF de alterações pendentes do modelo: nenhuma.
+
+Implementados abertura, realização explícita, confirmação idempotente, correção com revisão simples, desconsideração com motivo, indicação de transferência própria para tratamento futuro, saldo por conta/consolidado, extrato e bloco financeiro separado do legado. Não há saldo mutável persistido.
+
+Decisões técnicas e limites:
+
+* migration deixa origem e classificação antigas nulas; a identificação estrutural de crédito bloqueia confirmação, e uma edição explícita preserva essa origem antes de alterar o método;
+* estado inicial `NaoReconciliada` representa ausência de confirmação; nenhum fato financeiro antigo é inferido;
+* operações financeiras usam transação de banco e `rowversion`; conflitos devolvem HTTP 409 para revisão pelo usuário;
+* corrigir/desconsiderar recalcula o histórico, sem criar estorno fictício; excluir fisicamente transações pela API foi substituído pela ação com motivo;
+* conta sem abertura não possui saldo calculável; consolidado sem contas calculáveis não presume zero;
+* extrato não possui paginação nesta fase; revisão simples guarda motivo, instante e valores antes/depois;
+* saldo depende dos registros confirmados pelo usuário; cadastro salarial e métricas legadas continuam provisórios e separados;
+* validação final usou Release para evitar arquivos Debug bloqueados por outro processo, sem encerrá-lo;
+* inicialização normal continua aplicando migrations pendentes: realizar backup restaurável antes de executar contra o banco pessoal.
+
+Inventário completo, endpoints e comandos estão em `../../ControleFinanceiro.API.Tests/README.md`. Fase 3 permanece não iniciada.
 
 ---
 

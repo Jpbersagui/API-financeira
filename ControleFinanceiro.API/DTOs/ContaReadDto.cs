@@ -8,4 +8,7 @@ public class ContaReadDto
     public string Nome { get; set; } = string.Empty;
     public TipoConta Tipo { get; set; }
     public bool Ativa { get; set; }
+    public DateOnly? DataAbertura { get; set; }
+    public decimal? ValorAbertura { get; set; }
+    public string Versao { get; set; } = "";
 }

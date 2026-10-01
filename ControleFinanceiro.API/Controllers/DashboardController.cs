@@ -1,3 +1,4 @@
+using ControleFinanceiro.API.Services;
 using ControleFinanceiro.API.Data;
 using ControleFinanceiro.API.DTOs;
 using ControleFinanceiro.API.Enums;
@@ -12,10 +13,12 @@ namespace ControleFinanceiro.API.Controllers
     public class DashboardController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly SaldoService _saldos;
 
-        public DashboardController(AppDbContext context)
+        public DashboardController(AppDbContext context, SaldoService saldos)
         {
             _context = context;
+            _saldos = saldos;
         }
 
         private static readonly string[] NomesMeses =
@@ -40,11 +43,11 @@ namespace ControleFinanceiro.API.Controllers
             [FromQuery] int? mes, [FromQuery] int? ano)
         {
             // Usar mês/ano atuais se não informados
-            var agora = DateTime.Now;
+            var agora = _saldos.Hoje;
             int mesFiltro = mes ?? agora.Month;
             int anoFiltro = ano ?? agora.Year;
 
-            if (mesFiltro < 1 || mesFiltro > 12)
+            if (mesFiltro < 1 || mesFiltro > 12 || anoFiltro < 1900 || anoFiltro > 2100)
                 return BadRequest(new { mensagem = "O mês deve ser entre 1 e 12." });
 
             // ── Buscar todas as transações ──
@@ -144,26 +147,13 @@ namespace ControleFinanceiro.API.Controllers
             var transacoesDtoList = transacoesDoMes
                 .OrderByDescending(t => t.Data)
                 .ThenByDescending(t => t.Id)
-                .Select(t => new TransacaoReadDto
-                {
-                    Id = t.Id,
-                    ContaId = t.ContaId,
-                    ContaNome = t.Conta?.Nome,
-                    Titulo = t.Titulo,
-                    Valor = t.Valor,
-                    Data = t.Data,
-                    Tipo = t.Tipo,
-                    Categoria = t.Categoria,
-                    MetodoPagamento = t.MetodoPagamento,
-                    NumeroParcelas = t.NumeroParcelas,
-                    ParcelaAtual = t.ParcelaAtual,
-                    TransacaoOrigemId = t.TransacaoOrigemId
-                })
+                .Select(TransacoesController.MapToReadDto)
                 .ToList();
 
             // ── Montar resposta ──
             var dashboard = new DashboardDto
             {
+                Financeiro = await _saldos.Resumo(mesFiltro, anoFiltro),
                 SaldoConta = saldoConta,
                 RecebidoNoMes = recebidoNoMes,
                 GastoNoMes = gastoNoMes,

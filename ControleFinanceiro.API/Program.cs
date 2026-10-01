@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using ControleFinanceiro.API.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.SqlClient;
+using ControleFinanceiro.API.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,6 +24,9 @@ catch (ArgumentException ex)
 }
 
 builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlServer(connectionString));
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<MovimentacaoService>();
+builder.Services.AddScoped<SaldoService>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
@@ -55,6 +59,26 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 var app = builder.Build();
+
+app.Use(async (context, next) =>
+{
+    try { await next(context); }
+    catch (FinanceiroException ex)
+    {
+        context.Response.StatusCode = ex.Status;
+        await context.Response.WriteAsJsonAsync(new { mensagem = ex.Message });
+    }
+    catch (DbUpdateConcurrencyException)
+    {
+        context.Response.StatusCode = 409;
+        await context.Response.WriteAsJsonAsync(new { mensagem = "O registro mudou. Atualize a tela e tente novamente." });
+    }
+    catch (Exception ex) when (ex.GetBaseException() is SqlException { Number: 1205 })
+    {
+        context.Response.StatusCode = 409;
+        await context.Response.WriteAsJsonAsync(new { mensagem = "Outra operação alterou estes dados. Atualize a tela e tente novamente." });
+    }
+});
 
 // ── Inicializar banco de dados ──
 using (var scope = app.Services.CreateScope())
