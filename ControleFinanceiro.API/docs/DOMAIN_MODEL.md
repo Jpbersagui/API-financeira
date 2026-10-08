@@ -1139,8 +1139,6 @@ Devem ser resolvidas somente na fase correspondente:
 * entidade explícita ou não para ocorrência recorrente;
 * estratégia de versionamento de recorrências;
 * representação técnica de transferências;
-* pagamento parcial de previsões;
-* fechamento manual de obrigação com valor divergente;
 * compra no dia exato do fechamento;
 * antecipação de parcelas;
 * pagamento parcial de fatura;
@@ -1154,6 +1152,8 @@ Devem ser resolvidas somente na fase correspondente:
 * conversão ou aposentadoria futura da coluna antiga `Transacao.Data`, preservada na Fase 2.
 
 Não assumir silenciosamente uma dessas regras.
+
+Pagamento parcial de previsões e encerramento com valor divergente foram decididos para a Fase 3; ver seção 43.
 
 ---
 
@@ -1218,3 +1218,97 @@ Preservar o endpoint legado de criação como não reconciliado. Criar operaçõ
 Não criar `Previsao`, `PrevisaoId`, `CartaoCredito`, `Fatura`, recorrência ou operação de transferência. Uma saída manual correspondente a fatura antiga não possui vínculo com compras. A classificação de transferência própria somente impede sua confirmação indevida.
 
 Conta permanece sem saldo persistido. Abertura é um fato informado, não um acumulador. A migration é expansiva; não confirma registros, não presume abertura zero e não converte datas antigas.
+
+---
+
+# 43. Modelo da Fase 3 — Decisões fechadas
+
+Esta seção concretiza os conceitos das seções 7 a 9 exclusivamente para a Fase 3. Os campos de fases futuras apresentados no modelo conceitual não devem ser antecipados. REQUIREMENTS.md, seção 39, contém as regras funcionais correspondentes.
+
+## 43.1 Previsao e Transacao
+
+```text
+Previsao
+  Id
+  Descricao
+  Tipo: Receita | Despesa (TipoTransacao existente)
+  ValorPrevistoOriginal: decimal(18,2), positivo e imutável
+  ValorFinal: decimal(18,2)?, não negativo
+  DataPrevista: DateOnly
+  ContaId: int? (conta planejada)
+  Categoria: string (até 100 caracteres)
+  Observacoes: string?
+  AnoCompetencia: int?
+  MesCompetencia: int?
+  Estado: Ativa | Encerrada | Cancelada
+  EncerradaEm: DateTimeOffset?
+  CanceladaEm: DateTimeOffset?
+  MotivoEncerramento: string?
+  MotivoCancelamento: string?
+  Versao: rowversion
+
+Transacao
+  ...campos existentes preservados
+  PrevisaoId: int?
+  Previsao: navegação opcional
+```
+
+Relação `Previsao 1 -> Transacao 0..N`; uma transação participa integralmente de no máximo uma previsão. Não criar entidade intermediária de rateio nem duplicar transações numa entidade Realizacao.
+
+Conta planejada é opcional e não precisa coincidir com a conta efetiva. Não alterar contas/categorias de movimentos antigos por edição da previsão. Novos movimentos continuam exigindo conta ativa com abertura; planejamento não exige abertura. Inativação preserva previsão e vínculos históricos.
+
+Não criar CategoriaId, RecorrenciaId, fatura, cartão ou operação de transferência nesta migration. Ano/MesCompetencia são ambos nulos ou ambos preenchidos e não têm unicidade nesta fase.
+
+## 43.2 Consultas calculadas
+
+```text
+ValorReferencia = ValorFinal ?? ValorPrevistoOriginal
+ValorRealizado = SUM(Valor das transações confirmadas participantes)
+DiferencaMatematica = ValorReferencia - ValorRealizado
+ValorExcedente = MAX(ValorRealizado - ValorReferencia, 0)
+ValorRestante = Estado == Ativa ? MAX(DiferencaMatematica, 0) : 0
+Vencida = DataPrevista < Hoje && ValorRestante > 0
+```
+
+Não persistir esses totais, situação derivada nem vencimento. Não limitar o realizado ao mês da previsão ou ao marco de abertura da conta. Excluir desconsideradas, não reconciliadas, crédito legado e transferências próprias identificadas. Tipo da movimentação deve coincidir com o tipo da previsão.
+
+Situação tem precedência das decisões: Cancelada ou Encerrada; em Ativa, apresentar Aberta, ParcialmenteRealizada ou Realizada conforme realizado/restante. Ativa com ValorFinal zero e nenhuma realização é apresentada como "Sem valor a pagar/receber" (situação derivada própria), nunca como dinheiro movimentado. Vencida é booleano independente, inclusive para realização parcial.
+
+Excedente não cria crédito. Diferença matemática pode ser negativa. Encerramento/cancelamento não apagam diferenças, original, final ou movimentos; apenas determinam restante zero. Nenhuma fórmula de SaldoService ou extrato passa a somar previsões.
+
+## 43.3 Transições e correções
+
+* Ativa -> Encerrada: motivo obrigatório, com ou sem realização.
+* Ativa -> Cancelada: somente sem realização confirmada participante, com motivo para histórico.
+* Encerrada/Cancelada -> Ativa: reabertura explícita com motivo.
+* Novos vínculos e novas realizações: somente Ativa.
+* Desvinculação incorreta: permitida, com motivo, sem alterar fato financeiro nem reabrir automaticamente.
+* Desconsideração de participante: mantém histórico/vínculo e deixa de somar; confirmação antiga não é inferida novamente.
+* Correção de participante de previsão encerrada: permitida, recalcula realizado/diferença e preserva encerramento.
+* Alteração de tipo incompatível de uma transação vinculada: bloquear até desvinculação explícita.
+* Tipo da previsão não é alterado pela edição comum; mudanças de valor final exigem ação própria e estado Ativa.
+* Não oferecer exclusão física de previsão, independentemente da situação.
+
+Ao reabrir, metadados do estado terminal atual deixam de representar uma decisão vigente; o evento anterior, seus instantes e motivos permanecem na revisão. A próxima decisão terminal registra novos metadados coerentes. Não manter simultaneamente encerramento e cancelamento vigentes.
+
+## 43.4 Histórico simples
+
+`RevisaoPrevisao`: Id, PrevisaoId, Instante, Acao, Motivo e snapshots Antes/Depois relevantes. Registrar alterações importantes, estados e associações, identificando os movimentos envolvidos. Não persistir totais derivados como fonte de verdade.
+
+Reutilizar RevisaoTransacao para correções/desconsiderações financeiras e incluir PrevisaoId nos snapshots pertinentes. Alterações do realizado por correção de transação devem ser rastreáveis pelo movimento/revisão relacionado, sem duplicar auditoria financeira. Não reescrever snapshots antigos.
+
+## 43.5 Serviços e atomicidade
+
+Manter projeto único e EF Core. Introduzir `PrevisaoService` para cadastro, decisões, vínculos e consultas calculadas; `PrevisoesController` expõe operações explícitas.
+
+`MovimentacaoService` coordena a criação financeira vinculada reutilizando as validações da Fase 2, além da correção/desconsideração de participantes. Ajustar pontualmente a composição de sua transação de banco: movimento, vínculo e revisão necessária devem ser atômicos, sem commits independentes nem transações aninhadas. Evitar dependência circular entre serviços. Não criar workers, repositórios genéricos ou ProjectionService por antecipação.
+
+Usar versão da previsão e da transação quando pertinente. Mudanças nos participantes devem invalidar versões antigas da previsão, mesmo que seus campos descritivos não mudem. Repetição do vínculo idêntico é idempotente; nova realização baseada em versão já consumida retorna conflito, sem duplicar dinheiro. Revalidar estado, tipo e vínculo dentro da operação atômica. A FK isoladamente não garante invariantes entre registros.
+
+## 43.6 Persistência e contratos
+
+FKs de Previsao -> Conta, Transacao -> Previsao e RevisaoPrevisao -> Previsao com exclusão restrita. Adicionar índice de PrevisaoId, índices de consulta por data/estado/conta e restrições de valores, competência e coerência de estado/metadados. Valores financeiros calculados são somente saída dos DTOs, nunca aceitos como autoridade na escrita.
+
+A migration deixa PrevisaoId nulo para todo registro existente e não cria previsões por inferência. Preservar Transacao.Data, confirmação, conta, abertura e todas as revisões/parcelas anteriores. O DTO `PrevisaoMensalDto` continua legado; adicionar bloco independente de resumo de previsões ao dashboard.
+
+Dashboard filtra por DataPrevista e mostra situação atual das previsões daquele mês. O realizado dessas previsões pode ter ocorrido em outro mês: não somar ao fluxo de caixa da Fase 2. Competência é metadado independente. Projeção de saldo permanece fora da fase.

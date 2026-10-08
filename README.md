@@ -2,7 +2,7 @@
 
 Aplicação financeira pessoal desenvolvida em **ASP.NET Core**, com o objetivo de substituir o uso de planilhas por uma solução local, organizada e simples de utilizar.
 
-O projeto está sendo desenvolvido de forma incremental e atualmente encontra-se em desenvolvimento.
+O projeto está sendo desenvolvido de forma incremental. As Fases 1, 2 e 3 estão concluídas e validadas; a próxima etapa planejada é a implementação de categorias cadastráveis.
 
 ## Tecnologias
 
@@ -25,24 +25,32 @@ O projeto está sendo desenvolvido de forma incremental e atualmente encontra-se
 
 ## Funcionalidades atuais
 
-A primeira fase do projeto já está concluída e inclui:
+As três primeiras fases do projeto estão concluídas.
 
-- cadastro de contas financeiras;
-- edição, ativação e inativação de contas;
-- associação de lançamentos existentes a contas;
-- validação de contas ativas em novos lançamentos;
-- preservação de dados antigos durante migrations;
+Atualmente a aplicação inclui:
+
+- cadastro, edição, ativação e inativação de contas;
+- saldo inicial e saldo calculado por conta;
+- saldo consolidado e extrato;
+- registro de recebimentos e pagamentos realizados;
+- revisão, confirmação, correção e desconsideração de lançamentos;
+- previsões avulsas de receitas e despesas;
+- realizações parciais, totais e acima do valor previsto;
+- vinculação e desvinculação entre previsões e movimentações;
+- encerramento, cancelamento e reabertura de previsões;
+- dashboard com separação entre saldo realizado, previsões e métricas antigas;
+- preservação dos dados existentes durante migrations;
 - testes automatizados da API, banco de dados e interface.
 
-Atualmente o projeto possui **23 testes automatizados**.
+Atualmente o projeto possui **76 testes automatizados**.
 
 ## Roadmap
 
 O desenvolvimento está dividido em fases.
 
 - ✅ Contas e preparação do histórico
-- ⬜ Movimentações e saldo por conta
-- ⬜ Previsões financeiras
+- ✅ Movimentações e saldo por conta
+- ✅ Previsões financeiras
 - ⬜ Categorias cadastráveis
 - ⬜ Transferências
 - ⬜ Recorrências e salário

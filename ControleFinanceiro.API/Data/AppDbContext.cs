@@ -17,10 +17,39 @@ namespace ControleFinanceiro.API.Data
         public DbSet<Salario> Salarios { get; set; }
         public DbSet<Conta> Contas { get; set; }
         public DbSet<RevisaoTransacao> RevisoesTransacoes { get; set; }
+        public DbSet<Previsao> Previsoes { get; set; }
+        public DbSet<RevisaoPrevisao> RevisoesPrevisoes { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<Previsao>(e =>
+            {
+                e.ToTable("Previsoes", t =>
+                {
+                    t.HasCheckConstraint("CK_Previsoes_Valores", "[ValorPrevistoOriginal] > 0 AND ([ValorFinal] IS NULL OR [ValorFinal] >= 0)");
+                    t.HasCheckConstraint("CK_Previsoes_Competencia", "([AnoCompetencia] IS NULL AND [MesCompetencia] IS NULL) OR ([AnoCompetencia] IS NOT NULL AND [MesCompetencia] IS NOT NULL AND [AnoCompetencia] BETWEEN 1 AND 9999 AND [MesCompetencia] BETWEEN 1 AND 12)");
+                    t.HasCheckConstraint("CK_Previsoes_Estado", "([Estado] = 'Ativa' AND [EncerradaEm] IS NULL AND [CanceladaEm] IS NULL AND [MotivoEncerramento] IS NULL AND [MotivoCancelamento] IS NULL) OR ([Estado] = 'Encerrada' AND [EncerradaEm] IS NOT NULL AND [MotivoEncerramento] IS NOT NULL AND [CanceladaEm] IS NULL AND [MotivoCancelamento] IS NULL) OR ([Estado] = 'Cancelada' AND [CanceladaEm] IS NOT NULL AND [MotivoCancelamento] IS NOT NULL AND [EncerradaEm] IS NULL AND [MotivoEncerramento] IS NULL)");
+                });
+                e.Property(p => p.Descricao).HasMaxLength(200).IsRequired();
+                e.Property(p => p.Categoria).HasMaxLength(100).IsRequired();
+                e.Property(p => p.Observacoes).HasMaxLength(2000);
+                e.Property(p => p.Tipo).HasConversion<string>().HasMaxLength(20);
+                e.Property(p => p.Estado).HasConversion<string>().HasMaxLength(20);
+                e.Property(p => p.ValorPrevistoOriginal).HasPrecision(18, 2);
+                e.Property(p => p.ValorFinal).HasPrecision(18, 2);
+                e.Property(p => p.MotivoEncerramento).HasMaxLength(500);
+                e.Property(p => p.MotivoCancelamento).HasMaxLength(500);
+                e.Property(p => p.Versao).IsRowVersion();
+                e.HasOne(p => p.Conta).WithMany().HasForeignKey(p => p.ContaId).OnDelete(DeleteBehavior.Restrict);
+                e.HasIndex(p => new { p.DataPrevista, p.Estado });
+            });
+            modelBuilder.Entity<RevisaoPrevisao>(e =>
+            {
+                e.Property(r => r.Acao).HasMaxLength(50).IsRequired();
+                e.Property(r => r.Motivo).HasMaxLength(500).IsRequired();
+                e.HasOne(r => r.Previsao).WithMany().HasForeignKey(r => r.PrevisaoId).OnDelete(DeleteBehavior.Restrict);
+            });
 
             modelBuilder.Entity<Conta>(entity =>
             {
@@ -50,6 +79,7 @@ namespace ControleFinanceiro.API.Data
                 entity.HasIndex(t => new { t.ContaId, t.Estado, t.DataEfetivacao, t.Id });
 
                 entity.HasKey(t => t.Id);
+                entity.HasOne(t => t.Previsao).WithMany(p => p.Transacoes).HasForeignKey(t => t.PrevisaoId).OnDelete(DeleteBehavior.Restrict);
                 entity.HasOne(t => t.Conta).WithMany().HasForeignKey(t => t.ContaId)
                     .OnDelete(DeleteBehavior.Restrict);
 

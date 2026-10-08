@@ -378,6 +378,7 @@ namespace ControleFinanceiro.API.Controllers
             return new TransacaoReadDto
             {
                 Id = t.Id,
+                PrevisaoId = t.PrevisaoId,
                 ContaId = t.ContaId,
                 ContaNome = t.Conta?.Nome,
                 Estado = t.Estado,

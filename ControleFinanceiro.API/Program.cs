@@ -27,6 +27,7 @@ builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlServer(conn
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<MovimentacaoService>();
 builder.Services.AddScoped<SaldoService>();
+builder.Services.AddScoped<PrevisaoService>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>

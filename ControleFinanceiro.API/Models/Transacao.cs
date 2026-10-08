@@ -11,6 +11,8 @@ namespace ControleFinanceiro.API.Models
     {
         [Key]
         public int Id { get; set; }
+        public int? PrevisaoId { get; set; }
+        public Previsao? Previsao { get; set; }
 
         // Associação organiza o histórico; não confirma pagamento ou recebimento.
         public int? ContaId { get; set; }

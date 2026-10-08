@@ -8,6 +8,7 @@ namespace ControleFinanceiro.API.DTOs
     public class TransacaoReadDto
     {
         public int Id { get; set; }
+        public int? PrevisaoId { get; set; }
         public int? ContaId { get; set; }
         public string? ContaNome { get; set; }
         public bool SemConta => ContaId == null;

@@ -12,7 +12,7 @@ public class AberturaTests(SqlFixture fixture) : IClassFixture<SqlFixture>
         var conta = await s.Conta();
         await using var db = fixture.OpenDb();
         var clock = new ViradaClock();
-        var movimentos = new MovimentacaoService(db, clock);
+        var movimentos = new MovimentacaoService(db, clock, new PrevisaoService(db, clock));
         var saldos = new SaldoService(db, clock);
         Assert.Equal(new DateOnly(2026, 10, 31), movimentos.Hoje);
         Assert.Equal(movimentos.Hoje, saldos.Hoje);

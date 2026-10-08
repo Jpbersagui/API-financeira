@@ -25,6 +25,9 @@ public sealed class SqlFixture : IAsyncLifetime
     public bool SeedFase1 { get; init; }
     public string BeforeFase2 { get; private set; } = "";
     public string AfterFase2 { get; private set; } = "";
+    public bool SeedFase2 { get; init; }
+    public string BeforeFase3 { get; private set; } = "";
+    public string AfterFase3 { get; private set; } = "";
 
     public SqlFixture()
     {
@@ -60,7 +63,19 @@ public sealed class SqlFixture : IAsyncLifetime
         if (SeedFase1)
             await db.Database.ExecuteSqlRawAsync("INSERT INTO Contas (Nome, Tipo, Ativa) VALUES (N'Conta antiga', 'ContaCorrente', 0); UPDATE Transacoes SET ContaId = (SELECT TOP 1 Id FROM Contas) WHERE Id = 101;");
         BeforeFase2 = await SnapshotContas();
+        await db.GetService<IMigrator>().MigrateAsync("20260930202014_AdicionarAberturaEConfirmacao");
+        if (SeedFase2)
+            await db.Database.ExecuteSqlRawAsync("""
+                INSERT INTO Contas (Nome,Tipo,Ativa,DataAbertura,ValorAbertura) VALUES (N'Conta fase 2','ContaCorrente',0,'2026-08-01',850.25);
+                UPDATE Transacoes SET ContaId=(SELECT MAX(Id) FROM Contas), Estado='Confirmada',
+                    DataEfetivacao='2026-08-05', ConfirmadaEm='2026-08-05T12:30:00+00:00', OrigemRegistro='LegadoComum'
+                    WHERE Id=101;
+                INSERT INTO RevisoesTransacoes (TransacaoId,Instante,Motivo,Antes,Depois)
+                    VALUES (101,'2026-08-05T12:30:00+00:00',N'Conferido','{{"Valor":80.23}}','{{"Valor":80.23}}');
+                """);
+        BeforeFase3 = await SnapshotFase2();
         await db.Database.MigrateAsync();
+        AfterFase3 = await SnapshotFase2();
         AfterFase2 = await SnapshotContas();
         AfterMigration = await Snapshot();
         AccountsAfterMigration = await db.Contas.CountAsync();
@@ -88,6 +103,19 @@ public sealed class SqlFixture : IAsyncLifetime
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = "SELECT COALESCE((SELECT Id,Nome,Tipo,Ativa FROM Contas ORDER BY Id FOR JSON PATH, INCLUDE_NULL_VALUES), '[]') + COALESCE((SELECT Id,ContaId FROM Transacoes ORDER BY Id FOR JSON PATH, INCLUDE_NULL_VALUES), '[]')";
+        return (string)(await command.ExecuteScalarAsync())!;
+    }
+
+    private async Task<string> SnapshotFase2()
+    {
+        await using var connection = new SqlConnection(ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COALESCE((SELECT Id,Nome,Tipo,Ativa,DataAbertura,ValorAbertura,Versao FROM Contas ORDER BY Id FOR JSON PATH, INCLUDE_NULL_VALUES), '[]')
+              + COALESCE((SELECT Id,ContaId,Estado,OrigemRegistro,ClassificacaoPendente,DataEfetivacao,ConfirmadaEm,DesconsideradaEm,MotivoDesconsideracao,Versao FROM Transacoes ORDER BY Id FOR JSON PATH, INCLUDE_NULL_VALUES), '[]')
+              + COALESCE((SELECT * FROM RevisoesTransacoes ORDER BY Id FOR JSON PATH, INCLUDE_NULL_VALUES), '[]')
+            """;
         return (string)(await command.ExecuteScalarAsync())!;
     }
 

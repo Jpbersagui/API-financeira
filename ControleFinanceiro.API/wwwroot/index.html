@@ -56,6 +56,46 @@
             </details>
         </section>
 
+        <section class="section-card previsoes-section" aria-labelledby="previsoes-title">
+            <h2 id="previsoes-title" tabindex="-1">Espero receber ou pagar</h2>
+            <p>Previsões são planos. Não alteram seu saldo. Registre o recebimento ou pagamento somente quando o dinheiro realmente for movimentado.</p>
+            <div id="previsoes-resumo" aria-live="polite"></div>
+            <nav class="quick-actions" aria-label="Planejar">
+                <button type="button" class="btn" onclick="novaPrevisao('Receita')">Espero receber</button>
+                <button type="button" class="btn" onclick="novaPrevisao('Despesa')">Espero pagar</button>
+            </nav>
+            <form id="form-previsao" class="form-grid" hidden>
+                <h3 id="prev-form-title">Nova previsão</h3>
+                <div class="form-group"><label for="prev-descricao">Descrição</label><input id="prev-descricao" maxlength="200" required></div>
+                <div class="form-group"><label for="prev-original">Valor esperado originalmente (R$)</label><input id="prev-original" type="number" min="0.01" step="0.01" required></div>
+                <div class="form-group"><label for="prev-data">Data prevista</label><input id="prev-data" type="date" required></div>
+                <div class="form-group"><label for="prev-conta">Conta planejada (opcional)</label><select id="prev-conta"></select></div>
+                <div class="form-group"><label for="prev-categoria">Categoria</label><input id="prev-categoria" maxlength="100" required></div>
+                <details><summary>Detalhes opcionais</summary>
+                    <div class="form-group"><label for="prev-observacoes">Observações</label><textarea id="prev-observacoes" maxlength="2000"></textarea></div>
+                    <p>A competência serve para organização e pode ser diferente da data prevista. Informe mês e ano juntos.</p>
+                    <div class="form-group"><label for="prev-mes">Mês da competência</label><input id="prev-mes" type="number" min="1" max="12"></div>
+                    <div class="form-group"><label for="prev-ano">Ano da competência</label><input id="prev-ano" type="number" min="1" max="9999"></div>
+                </details>
+                <button class="btn btn--primary" type="submit">Salvar previsão</button>
+                <button class="btn" type="button" onclick="el('form-previsao').hidden = true">Cancelar edição</button>
+            </form>
+            <p id="prev-feedback" role="status"></p>
+            <details open><summary>Consultar previsões</summary>
+                <p>Filtros independentes do mês no topo. O resumo acima usa o mês selecionado; a lista pode mostrar todos os períodos.</p>
+                <form id="form-filtro-previsoes" class="form-grid">
+                    <div class="form-group"><label for="prev-filtro-conta">Conta planejada</label><select id="prev-filtro-conta"></select></div>
+                    <div class="form-group"><label for="prev-filtro-tipo">Tipo</label><select id="prev-filtro-tipo"><option value="">Todos</option><option value="Receita">Espero receber</option><option value="Despesa">Espero pagar</option></select></div>
+                    <div class="form-group"><label for="prev-filtro-situacao">Situação</label><select id="prev-filtro-situacao"><option value="">Todas</option><option value="Aberta">Em aberto</option><option value="ParcialmenteRealizada">Parte recebida ou paga</option><option value="Realizada">Valor realizado</option><option value="SemValor">Sem valor a pagar ou receber</option><option value="Encerrada">Encerrada</option><option value="Cancelada">Cancelada</option></select></div>
+                    <div class="form-group"><label for="prev-filtro-inicio">Data prevista desde</label><input id="prev-filtro-inicio" type="date"></div>
+                    <div class="form-group"><label for="prev-filtro-fim">Data prevista até</label><input id="prev-filtro-fim" type="date"></div>
+                    <label><input id="prev-filtro-vencida" type="checkbox"> Somente vencidas</label>
+                    <button class="btn" type="submit">Consultar previsões</button>
+                </form>
+                <div id="previsoes-lista" aria-live="polite"></div>
+            </details>
+        </section>
+
         <section class="section-card finance-section" aria-labelledby="mov-title">
             <h2 id="mov-title">Novo pagamento</h2>
             <p id="mov-ajuda">Registre somente dinheiro que já saiu da conta.</p>
@@ -339,8 +379,37 @@
         <p id="registro-feedback" role="status"></p>
         <div id="registro-revisoes"></div>
     </dialog>
+    <dialog id="previsao-dialog" aria-labelledby="prev-dialog-title">
+        <h2 id="prev-dialog-title"></h2>
+        <p id="prev-contexto"></p><div id="prev-valores"></div>
+        <p id="prev-decisao"></p>
+        <h3>Pagamentos e recebimentos vinculados</h3>
+        <p>Confira o que já foi registrado antes de adicionar outro pagamento ou recebimento.</p>
+        <div id="prev-movimentos"></div>
+        <div id="prev-acoes" class="quick-actions"></div>
+        <form id="form-prev-final" class="form-grid" hidden>
+            <p>O valor original será preservado. Zero significa que não há valor exigido, sem criar pagamento.</p>
+            <div class="form-group"><label for="prev-final">Valor final (R$)</label><input id="prev-final" type="number" min="0" step="0.01" required></div>
+            <button class="btn" type="submit">Salvar valor final</button>
+        </form>
+        <form id="form-prev-vinculo" class="form-grid" hidden>
+            <p>Selecione dinheiro já registrado. O valor inteiro será vinculado e o saldo não mudará. Histórico anterior ao saldo inicial também pode quitar esta previsão.</p>
+            <div class="form-group"><label for="prev-transacao">Movimentação já registrada</label><select id="prev-transacao" required></select></div>
+            <button class="btn" type="submit">Vincular movimentação</button>
+        </form>
+        <form id="form-prev-decisao" class="form-grid" hidden>
+            <p id="prev-explicacao"></p>
+            <div class="form-group"><label for="prev-motivo">Motivo</label><input id="prev-motivo" maxlength="500" required></div>
+            <button id="prev-confirmar-acao" class="btn" type="submit">Confirmar</button>
+            <button class="btn" type="button" onclick="el('form-prev-decisao').hidden = true">Voltar sem alterar</button>
+        </form>
+        <p id="prev-dialog-feedback" role="status"></p>
+        <div id="prev-historico"></div>
+        <button type="button" class="btn" onclick="el('previsao-dialog').close()">Fechar previsão</button>
+    </dialog>
     <script src="js/app.js"></script>
     <script src="js/contas.js"></script>
     <script src="js/movimentacoes.js"></script>
+    <script src="js/previsoes.js"></script>
 </body>
 </html>

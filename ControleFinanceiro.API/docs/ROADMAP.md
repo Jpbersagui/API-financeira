@@ -615,7 +615,7 @@ Decisões técnicas e limites:
 * validação final usou Release para evitar arquivos Debug bloqueados por outro processo, sem encerrá-lo;
 * inicialização normal continua aplicando migrations pendentes: realizar backup restaurável antes de executar contra o banco pessoal.
 
-Inventário completo, endpoints e comandos estão em `../../ControleFinanceiro.API.Tests/README.md`. Fase 3 permanece não iniciada.
+Inventário completo, endpoints e comandos estão em `../../ControleFinanceiro.API.Tests/README.md`. Na conclusão da Fase 2, a Fase 3 ainda não havia sido iniciada; seu resultado está abaixo.
 
 ---
 
@@ -624,7 +624,7 @@ Inventário completo, endpoints e comandos estão em `../../ControleFinanceiro.A
 Status:
 
 ```text
-[ ]
+[x]
 ```
 
 ## Objetivo
@@ -639,11 +639,153 @@ Introduzir a separação formal entre planejamento financeiro e dinheiro realiza
 * vínculo entre previsão e transações;
 * previsão avulsa;
 * realização parcial;
-* valor previsto original;
-* valor final;
-* encerramento;
-* cancelamento;
-* cálculo de valor em aberto.
+* valor previsto original imutável e valor final opcional, inclusive zero;
+* conta planejada opcional e categoria string compatível com o modelo atual;
+* uma transação integralmente vinculada a no máximo uma previsão, sem rateio;
+* múltiplas realizações e realização acima do previsto/final, sem crédito automático;
+* vinculação posterior e desvinculação explícita de transação confirmada;
+* encerramento com motivo, inclusive sem realização;
+* cancelamento somente sem realização confirmada participante;
+* reabertura explícita com motivo;
+* cálculo de realizado, restante, diferença/excedente e situação;
+* vencimento derivado de data prevista anterior a hoje e restante positivo;
+* competência opcional (ano/mês juntos), independente da data prevista;
+* histórico simples de alterações e decisões, sem event sourcing;
+* integração das correções/desconsiderações da Fase 2 com participantes de previsão;
+* resumo mensal pela DataPrevista, com situação atual, separado de saldo e métricas antigas;
+* interface mínima com criação, realização, vínculo, revisão, encerramento, cancelamento e reabertura.
+
+## Decisões fechadas e limites
+
+Referências: REQUIREMENTS.md, seção 39, e DOMAIN_MODEL.md, seção 43. Decisões aprovadas em 01/10/2026. Implementação autorizada e validada em 02/10/2026.
+
+Persistir apenas Ativa, Encerrada e Cancelada como estados de decisão. Aberta, parcialmente realizada, realizada, ausência de valor a pagar/receber e vencimento são calculados. Vencida é indicador independente, não exclusão das demais situações.
+
+Encerrar zera o restante, sem apagar original, final, realizado ou diferença. Cancelamento não é realização; após pagamento parcial utilizar encerramento. Reabrir exige motivo e recalcula situação. Corrigir/desconsiderar transação ligada a encerrada recalcula o realizado e preserva encerramento até reabertura explícita. Sem exclusão física de previsões.
+
+Uma transação confirmada anterior à abertura pode quitar previsão sem alterar saldo acompanhado. Crédito legado, transferência própria identificada, não reconciliados e desconsiderados não podem ser vinculados como novas realizações. A conta real pode diferir da planejada; novo movimento segue as regras de conta ativa/abertura da Fase 2 e vínculo histórico preserva contas inativas.
+
+Não alterar fórmulas de saldo/extrato. Não implementar saldo projetado, recorrências, categorias cadastráveis, cartões, faturas, transferências ou rateio. Não criar unicidade por competência nem gerar previsões automaticamente. Salário automático permanece suspenso. Cadastro/métricas antigos continuam separados e preservados.
+
+## Endpoints e organização
+
+Manter `SaldoService` e os contratos financeiros anteriores. Acrescentar `PrevisaoService` e `PrevisoesController`; estender pontualmente `MovimentacaoService` para criação vinculada atômica e validação de correções de participantes. Usar um único fluxo de validação financeira, sem duplicar regras ou introduzir infraestrutura adicional.
+
+```text
+POST /api/previsoes
+GET /api/previsoes
+GET /api/previsoes/{id}
+PUT /api/previsoes/{id}
+PUT /api/previsoes/{id}/valor-final
+POST /api/previsoes/{id}/realizacoes
+PUT /api/previsoes/{id}/transacoes/{transacaoId}
+POST /api/previsoes/{id}/transacoes/{transacaoId}/desvinculacao
+POST /api/previsoes/{id}/encerramento
+POST /api/previsoes/{id}/cancelamento
+POST /api/previsoes/{id}/reabertura
+GET /api/previsoes/{id}/revisoes
+```
+
+Sem DELETE físico. Novas realizações exigem versão atual da previsão e gravação atômica de movimento/vínculo; repetição do vínculo não duplica participação. Ajustar controle de concorrência para alterações de participantes invalidarem versões anteriores. DTOs de escrita não recebem totais derivados como autoridade.
+
+## Interface mínima
+
+Oferecer "Espero receber" e "Espero pagar", lista por conta/tipo/situação/data, detalhes de valores e movimentos vinculados e ações explícitas de realização parcial/total, informar valor final, vincular existente, remover vínculo, encerrar, cancelar e reabrir. Reaproveitar formulários e painéis da Fase 2, com histórico acessível, confirmação e motivos quando necessários.
+
+Separar "Aguardando revisão" do cadastro antigo de "Falta pagar/receber" das previsões e de "Saldo calculado". O botão de realização total sugere o restante, mas não confirma automaticamente. Exibir contas sem definição/inativas sem esconder previsões. Competência fica em detalhes opcionais.
+
+Dashboard: receitas/despesas previstas separadas, situação atual do conjunto filtrado pela DataPrevista e indicador de vencidas com escopo explícito. Não reinterpretar `PrevisaoMensalDto` legado nem apresentar os realizados do conjunto como fluxo de caixa daquele mês. Não implementar projeção de saldo.
+
+## Arquivos existentes previstos
+
+```text
+Models/Transacao.cs
+Data/AppDbContext.cs
+Services/MovimentacaoService.cs
+Controllers/TransacoesController.cs
+Controllers/DashboardController.cs
+DTOs/TransacaoReadDto.cs
+DTOs/DashboardDto.cs
+Program.cs
+Migrations/AppDbContextModelSnapshot.cs
+wwwroot/index.html
+wwwroot/css/style.css
+wwwroot/js/app.js
+wwwroot/js/movimentacoes.js
+wwwroot/js/contas.js
+docs/REQUIREMENTS.md
+docs/DOMAIN_MODEL.md
+docs/ROADMAP.md
+../ControleFinanceiro.API.Tests/README.md
+```
+
+`contas.js` apenas integra as opções/atualizações dos novos formulários. Reutilizar RevisaoTransacao com vínculo nos snapshots pertinentes, preservando snapshots anteriores. Não há alteração prevista dos models Conta/Salario ou de fórmulas do SaldoService. Adaptar testes existentes somente se necessário para preservar verificações após a integração, sem retirar cobertura.
+
+## Arquivos novos previstos
+
+```text
+Models/Previsao.cs
+Models/RevisaoPrevisao.cs
+Enums/EstadoPrevisao.cs
+Enums/SituacaoPrevisao.cs
+Services/PrevisaoService.cs
+Controllers/PrevisoesController.cs
+DTOs/PrevisaoCreateDto.cs
+DTOs/PrevisaoUpdateDto.cs
+DTOs/PrevisaoReadDto.cs
+DTOs/PrevisaoFiltroDto.cs
+DTOs/DefinirValorFinalDto.cs
+DTOs/RealizarPrevisaoDto.cs
+DTOs/VincularTransacaoDto.cs
+DTOs/DesvincularTransacaoDto.cs
+DTOs/AlterarEstadoPrevisaoDto.cs
+DTOs/RevisaoPrevisaoDto.cs
+DTOs/ResumoPrevisoesDto.cs
+wwwroot/js/previsoes.js
+Migrations/<timestamp>_AdicionarPrevisoesERealizacoes.cs
+Migrations/<timestamp>_AdicionarPrevisoesERealizacoes.Designer.cs
+../ControleFinanceiro.API.Tests/PrevisaoTests.cs
+../ControleFinanceiro.API.Tests/RealizacaoPrevisaoTests.cs
+../ControleFinanceiro.API.Tests/VinculoPrevisaoTests.cs
+../ControleFinanceiro.API.Tests/Fase3MigrationTests.cs
+../ControleFinanceiro.API.Tests/Fase3InterfaceTests.cs
+```
+
+## Migration prevista e segurança
+
+`AdicionarPrevisoesERealizacoes`: tabelas Previsoes/RevisoesPrevisoes, Transacoes.PrevisaoId nullable, FKs restritas, precisão monetária, rowversion, índices e restrições de coerência. Não armazenar realizado/restante/saldo como acumuladores mutáveis.
+
+Não alterar migrations anteriores nem preencher PrevisaoId, criar previsões ou interpretar salários/parcelas/categorias existentes. Preservar integralmente abertura, confirmações, revisões, valores, datas e associações da Fase 2.
+
+Validar desde migrations anteriores em bancos isolados com histórico sintético. Nunca utilizar o banco pessoal para testes. Riscos principais: associação equivocada, cascata, gravação parcial, realização duplicada, correção incompatível e filtro de abertura indevidamente aplicado à realização. Cobrir com restrições, operações explícitas, atomicidade, concorrência e testes.
+
+Inicialização normal ainda aplica migrations pendentes: backup restaurável antes de executar a futura versão no banco pessoal. Down remove os novos dados e não substitui backup.
+
+## Testes previstos
+
+* previsão avulsa de receita/despesa, com/sem conta e competência válida/incompleta;
+* original imutável, valor final posterior/zero, precisão e valores inválidos;
+* sem realização, integral, parcial, múltiplas realizações e excedente sem crédito;
+* encerramento com/sem realização, preservação da diferença e motivo obrigatório;
+* cancelamento sem participante, rejeição após realização parcial e histórico preservado;
+* reabertura com motivo e recálculo do restante/situação;
+* vencimento derivado, dia previsto, virada de mês/ano e calendário local após aplicação fechada;
+* conta ativa/inativa, sem abertura, conta efetiva diferente e pagamentos por contas distintas;
+* transação confirmada anterior à abertura quita previsão sem entrar no saldo acompanhado;
+* vinculação posterior, vínculo único por transação, repetição idempotente e desvinculação sem alterar saldo;
+* bloqueio de crédito, transferência própria, não reconciliado, desconsiderado e tipo incompatível;
+* novas realizações/vínculos bloqueados em encerradas/canceladas até reabertura;
+* correção/desconsideração de participante recalcula realizado e preserva encerramento explícito;
+* Ativa realizada pode voltar a ter restante após correção/desconsideração/desvinculação;
+* criação de previsão e ações de estado/vínculo não alteram saldo; só movimentação financeira altera;
+* concorrência, versão desatualizada, atomicidade e prevenção de realização duplicada;
+* histórico simples de alterações/vínculos, sem reescrever revisões antigas;
+* dashboard filtra DataPrevista, inclui realizações posteriores no conjunto atual e separa fluxo de caixa/legado;
+* migration preserva dados anteriores e vínculos nulos; modelo sem mudanças pendentes;
+* interface de criação, realização, valor final, vínculo/desvínculo, encerramento, cancelamento, reabertura e histórico;
+* regressão integral das Fases 1/2 e UX (base atual: 50 testes aprovados na última validação).
+
+Somente atualizar status para concluída após build e todos os testes relevantes, incluindo interface e migrations isoladas, passarem.
 
 ---
 
@@ -689,7 +831,39 @@ Restante financeiro: 0
 * uma previsão suporta múltiplas realizações;
 * uma transação pode existir sem previsão;
 * previsão pode existir sem recorrência;
-* cancelamento e encerramento funcionam.
+* original é preservado, final zero/excedente não inventam movimentação;
+* vínculo/desvínculo preservam o fato financeiro e a unicidade por transação;
+* cancelamento, encerramento e reabertura respeitam as decisões explícitas;
+* correções não reabrem automaticamente previsões encerradas;
+* valores e vencimento são calculados sem processos contínuos;
+* dashboard e interface separam previsão, realizado e cadastro antigo;
+* migration expansiva e regressões validadas exclusivamente em bancos isolados;
+* nenhuma funcionalidade da Fase 4 ou posterior implementada.
+
+---
+
+## Resultado da implementação da Fase 3
+
+Validada em 02/10/2026: build Release com zero avisos e zero erros; **76 testes aprovados**, nenhum ignorado ou com falha. Preservados os 50 testes anteriores e acrescentados 26 casos da Fase 3. A suíte inclui cinco casos de interface no Edge headless, sendo dois novos em larguras de 1280 e 390 pixels.
+
+Migration única `20261002174011_AdicionarPrevisoesERealizacoes`: Previsoes, RevisoesPrevisoes e vínculo opcional Transacoes.PrevisaoId. Validada desde as migrations anteriores, com contas, abertura, confirmação, revisão, salários e parcelas sintéticos preservados. Todas as migrations antigas permanecem intactas. Nenhuma alteração pendente no modelo EF. Banco pessoal não utilizado.
+
+Entregues previsões avulsas, realizações parciais/integral/excedente, valor final inclusive zero, vínculo/desvínculo de movimentos existentes, encerramento/cancelamento/reabertura, histórico, filtros, resumo mensal e interface. Saldo/extrato da Fase 2 mantêm suas fórmulas. Somente movimentações confirmadas elegíveis produzem efeito financeiro.
+
+Decisões técnicas:
+
+* reutilizar o preparo de movimento do MovimentacaoService; criação, vínculo e revisão pertencem à mesma transação;
+* proteger operações com isolamento Serializable e rowversion; alterar participantes invalida a versão da previsão, sem persistir totais;
+* conflito devolve HTTP 409 para revisão, sem repetição automática que possa criar dinheiro duplicado;
+* situação calculada SemValor distingue final zero sem pagamento; vencimento usa calendário local via TimeProvider;
+* DTO de edição não aceita tipo ou valor original; edição comum e valor final exigem previsão ativa;
+* a consulta de realização inclui histórico confirmado anterior à abertura; não aplica filtros financeiros de saldo;
+* teste injeta falha após a primeira gravação do movimento e confirma rollback de movimento, vínculo, versão e revisão;
+* interface reutiliza o formulário de movimentos e bloqueia ações concorrentes na janela durante gravação.
+
+Limitações mantidas: consultas sem paginação; resumo de previsões mostra a situação atual do conjunto com DataPrevista no mês, não uma fotografia histórica; revisões financeiras permanecem no histórico do movimento. Não há recorrência, categoria cadastrável, cartões, faturas, transferências nem saldo projetado. Fase 4 não iniciada.
+
+Inventário completo e testes: `../../ControleFinanceiro.API.Tests/README.md`. A inicialização normal ainda aplica migrations: fazer backup restaurável antes de executar esta versão contra o banco pessoal.
 
 ---
 

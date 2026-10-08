@@ -1213,3 +1213,94 @@ Utilizar `DateOnly` para `DataAbertura`, `DataEfetivacao`, referência de saldo 
 A migration deve ser expansiva, preservar dados e migrations antigas, manter abertura não informada nas contas existentes e todos os registros existentes não reconciliados. Validar em banco isolado antes de qualquer aplicação ao banco pessoal.
 
 Não implementar previsões, domínio de cartões, faturas, novas regras de parcelas, recorrências ou transferências entre contas próprias. O salário automático continua suspenso. Nada exige execução contínua da aplicação.
+
+---
+
+# 39. Fase 3 — Previsões e realizações parciais: decisões fechadas
+
+Estas decisões delimitam a Fase 3, implementada e validada em 02/10/2026. As restrições da seção 38 descrevem a entrega anterior; o restante do domínio futuro não deve ser antecipado.
+
+## 39.1 Previsão avulsa
+
+Uma `Previsao` representa expectativa de receita ou despesa e permanece separada de `Transacao`. Pode existir sem recorrência e sem qualquer realização. Uma movimentação confirmada também pode continuar existindo sem previsão.
+
+Informar descrição, tipo, valor previsto original, data prevista e categoria. Conta, observações e competência são opcionais. A categoria continua sendo string compatível com o cadastro atual; não criar categorias cadastráveis nesta fase.
+
+A conta planejada é opcional. A conta efetiva é obrigatória quando dinheiro for movimentado. A realização pode utilizar outra conta e realizações parciais podem ocorrer em contas diferentes; isso não reescreve a conta planejada nem as movimentações anteriores.
+
+Uma conta ativa sem abertura pode receber planejamento. Novas escolhas de conta planejada usam contas ativas; vínculos existentes com contas posteriormente inativadas são preservados. Criar nova movimentação exige conta ativa com abertura e data dentro do período acompanhado, conforme a Fase 2. Consultas e revisão histórica continuam disponíveis para contas inativas.
+
+## 39.2 Valores
+
+* `ValorPrevistoOriginal` é positivo e imutável depois da criação.
+* `ValorFinal` é opcional, pode ser informado posteriormente e admite zero, sem sobrescrever o original.
+* Valores monetários usam duas casas decimais; não arredondar silenciosamente entradas inválidas.
+* `ValorRealizado`, diferença, excedente e restante são calculados sob demanda.
+* Realização acima do valor previsto/final é permitida. O excedente é informação para conferência, não crédito automático.
+
+```text
+ValorReferencia = ValorFinal ?? ValorPrevistoOriginal
+ValorRealizado = soma das transações confirmadas participantes
+DiferencaMatematica = ValorReferencia - ValorRealizado
+ValorExcedente = max(ValorRealizado - ValorReferencia, 0)
+ValorRestante = 0, se Encerrada ou Cancelada
+ValorRestante = max(DiferencaMatematica, 0), se Ativa
+```
+
+O valor final zero não cria transação de valor zero. Na interface, sem realização, apresentar "Sem valor a pagar/receber", sem afirmar que houve pagamento. Erro no original não é corrigido sobrescrevendo esse campo; o cadastro incorreto é preservado e tratado por cancelamento/encerramento conforme suas realizações.
+
+## 39.3 Realização e vínculos
+
+Uma previsão admite zero, uma ou várias transações. Cada transação pode estar vinculada a no máximo uma previsão, por seu valor integral. Não implementar rateio.
+
+Registrar pagamento ou recebimento a partir da previsão cria uma transação confirmada pelo fluxo da Fase 2. Gravar movimentação e vínculo atomicamente, reaproveitando as validações existentes. Um botão de realização total apenas sugere o restante; nunca confirma dinheiro automaticamente.
+
+Permitir vincular posteriormente uma transação já confirmada e desvincular uma associação incorreta. Essas ações alteram somente o vínculo, não valor, data, conta, confirmação ou efeito financeiro da transação. Repetição do mesmo vínculo não duplica participação. Trocar para outra previsão exige remoção explícita do vínculo anterior.
+
+Receita realiza previsão de receita; despesa realiza previsão de despesa. Crédito legado, transferência própria identificada, não reconciliados e desconsiderados não são elegíveis para novo vínculo/realização. Categoria e conta planejada não precisam coincidir com a movimentação real.
+
+Uma transação confirmada anterior à abertura pode realizar/quitar uma previsão sem entrar no saldo acompanhado da conta. O cálculo da realização não aplica o corte de abertura utilizado pelo saldo. Vínculo histórico com transação confirmada em conta inativa também é permitido.
+
+## 39.4 Estados, encerramento, cancelamento e reabertura
+
+Persistir apenas `Ativa`, `Encerrada` ou `Cancelada`, mutuamente exclusivos. Aberta, parcialmente realizada e realizada são situações calculadas. Vencida é indicador adicional derivado de `DataPrevista < hoje` e `ValorRestante > 0`; pode coexistir com realização parcial.
+
+Encerramento é ação explícita com motivo, permitida com ou sem realização. Zera o restante, preservando original, final, realizado e diferença. Não cria pagamento compensatório.
+
+Cancelamento só é permitido quando não há realização confirmada participante. Após realização parcial, utilizar encerramento do restante. Cancelamento preserva o histórico e não é realização; não participa de eventual projeção futura.
+
+Reabertura é ação explícita com motivo. Restaura o estado Ativa e recalcula a situação e o restante. Novas realizações e novos vínculos exigem previsão Ativa; encerradas/canceladas precisam ser reabertas. Desvincular registro incorreto continua possível sem reabrir, preservando a decisão de encerramento/cancelamento.
+
+Não oferecer exclusão física de previsões nesta fase, tenham ou não realizações. Preservar também previsões integralmente realizadas e canceladas.
+
+## 39.5 Correções e histórico
+
+Correção/desconsideração de transação vinculada usa o fluxo específico existente com motivo e revisão. Se desconsiderada, deixa de participar do realizado, mas seu vínculo pode permanecer para explicar o histórico. Mudança de tipo incompatível com a previsão exige desvinculação explícita antes da correção.
+
+É permitido corrigir ou desconsiderar transação de previsão encerrada: recalcular realizado/diferença, mantendo a previsão encerrada e o restante zero até reabertura explícita. Uma previsão Ativa cuja situação era Realizada pode voltar a ter restante após correção, desconsideração ou desvinculação.
+
+Manter histórico simples das alterações importantes da previsão, decisões e vínculos, incluindo motivo e instante. Não implementar event sourcing nem reconstruir saldos a partir da auditoria. Edição de previsão não reescreve transações vinculadas; alterações de valor final em encerradas/canceladas exigem reabertura.
+
+## 39.6 Datas e competência
+
+`DataPrevista` usa DateOnly e admite passado, presente ou futuro. Não inferir realização pela data. `AnoCompetencia` e `MesCompetencia` são opcionais e devem ser preenchidos juntos, com mês válido.
+
+Competência é independente de DataPrevista. Não gerar recorrências, identidade única por competência ou registros automáticos. Instantes de encerramento/cancelamento/revisão podem usar DateTimeOffset em UTC. Reutilizar TimeProvider para calendário local testável.
+
+## 39.7 Saldo, dashboard e interface
+
+Previsões não alteram saldo, extrato nem fórmulas da Fase 2. Somente transações confirmadas elegíveis continuam alterando o saldo acompanhado.
+
+Não implementar saldo projetado nesta fase. Entregar original, final, realizado, restante, diferença/excedente, situação e indicador de vencimento.
+
+O resumo mensal filtra previsões pela DataPrevista e apresenta sua situação atual, incluindo realizações posteriores ao mês selecionado. Não apresentar esses totais como fluxo de caixa daquele mês ou reconstrução histórica de como a previsão estava no passado. Receitas e despesas permanecem separadas. Canceladas ficam no histórico, fora dos totais ativos; encerradas preservam comparação e restante zero. Vencidas até hoje, quando exibidas em resumo global, têm escopo explícito e não são repetidas em todos os meses.
+
+Manter saldo calculado em destaque e métricas antigas separadas. O DTO legado `PrevisaoMensalDto` não passa a representar a nova entidade. Diferenciar "Aguardando revisão" do histórico antigo e "Falta pagar/receber" de previsões.
+
+Oferecer "Espero receber", "Espero pagar", "Registrar recebimento/pagamento", "Vincular movimentação já registrada", "Informar valor final", "Encerrar restante", "Cancelar previsão", "Reabrir" e "Remover vínculo", com contexto e explicação do efeito. Exibir pagamentos/recebimentos já vinculados antes de registrar outro. Usar datas DD/MM/AAAA na apresentação.
+
+## 39.8 Compatibilidade e limites
+
+Migration expansiva: nova estrutura e vínculo nullable, sem alterar migrations antigas e sem preencher vínculos ou criar previsões a partir de dados existentes. Preservar contas, aberturas, salários, transações, revisões e parcelas antigas.
+
+Não implementar recorrências, categorias cadastráveis, cartões, faturas, transferências, rateio ou saldo projetado. Salário automático permanece suspenso. Vencimento e valores são calculados na consulta; nenhuma regra depende de timers, workers ou aplicação aberta continuamente.

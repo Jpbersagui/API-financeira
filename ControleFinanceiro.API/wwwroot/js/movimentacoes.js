@@ -65,12 +65,14 @@ function renderFinanceiro(f) {
 }
 async function atualizarFinanceiro() {
     await carregarContas(); await loadDashboard(); await carregarRevisao();
+    await carregarPrevisoes();
     el('extrato-resultado').textContent = 'Dados alterados. Consulte novamente o extrato para atualizar os saldos.';
 }
 async function enviarFinanceiro(url, method, data) {
     return respostaConta(await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }));
 }
 function resetMovimento() {
+    previsaoRealizando = null;
     movimentoRevisado = null; el('form-realizado').reset(); el('mov-data').value = dataLocalHoje();
     ['mov-titulo','mov-valor','mov-tipo','mov-categoria','mov-metodo'].forEach(id => el(id).disabled = false);
     el('mov-motivo').disabled = true; el('mov-motivo').required = false;
@@ -103,6 +105,7 @@ function orientarConta() {
     el('mov-conta-ajuda').textContent = aviso;
 }
 async function revisarMovimento(id) {
+    previsaoRealizando = null;
     try {
         const t = await respostaConta(await fetch(`/api/transacoes/${id}`));
         if (t.creditoLegado || t.classificacaoPendente || t.estado === 'Desconsiderada') {
@@ -220,13 +223,16 @@ document.addEventListener('DOMContentLoaded', () => {
     el('form-realizado').addEventListener('submit', async event => {
         event.preventDefault(); const button = event.submitter; button.disabled = true;
         const t = movimentoRevisado;
+        const p = previsaoRealizando;
         const conta = contas.find(c => c.id === Number(el('mov-conta').value));
         if (!t && conta && !conta.dataAbertura) { orientarConta(); el('mov-definir-abertura').focus(); button.disabled = false; return; }
         const data = { contaId: Number(el('mov-conta').value), dataEfetivacao: el('mov-data').value, titulo: el('mov-titulo').value.trim(), valor: Number(el('mov-valor').value), tipo: el('mov-tipo').value, categoria: el('mov-categoria').value.trim(), metodoPagamento: el('mov-metodo').value, motivo: el('mov-motivo').value, versao: t?.versao };
         try {
-            const path = !t ? '/api/transacoes/realizadas' : `/api/transacoes/${t.id}/${t.estado === 'Confirmada' ? 'correcao' : 'confirmacao'}`;
+            const path = p ? `/api/previsoes/${p.id}/realizacoes` : !t ? '/api/transacoes/realizadas' : `/api/transacoes/${t.id}/${t.estado === 'Confirmada' ? 'correcao' : 'confirmacao'}`;
+            if (p) data.versao = p.versao;
             await enviarFinanceiro(path, t?.estado === 'Confirmada' ? 'PUT' : 'POST', data);
             resetMovimento(); await atualizarFinanceiro(); el('mov-feedback').textContent = 'Lançamento salvo. O saldo calculado foi atualizado.';
+            if (p) await abrirPrevisao(p.id);
         } catch (error) { el('mov-feedback').textContent = error.message; } finally { button.disabled = false; }
     });
     el('form-extrato').addEventListener('submit', async event => {

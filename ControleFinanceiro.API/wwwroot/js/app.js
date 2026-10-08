@@ -96,6 +96,7 @@ function renderDashboard() {
     if (!d) return;
     document.getElementById('resumo-aviso').textContent = d.aviso;
     renderFinanceiro(d.financeiro);
+    renderResumoPrevisoes(d.previsoes);
 
     // ── Cards ──
     document.getElementById('card-saldo').textContent = formatCurrency(d.saldoConta);

@@ -59,6 +59,7 @@ function renderContas() {
     if (contas.some(c => c.ativa && String(c.id) === anterior)) select.value = anterior;
     updateContaVisibility();
     preencherContasFinanceiras();
+    preencherContasPrevisoes();
 }
 
 function updateContaVisibility() {

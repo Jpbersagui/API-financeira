@@ -14,11 +14,13 @@ namespace ControleFinanceiro.API.Controllers
     {
         private readonly AppDbContext _context;
         private readonly SaldoService _saldos;
+        private readonly PrevisaoService _previsoes;
 
-        public DashboardController(AppDbContext context, SaldoService saldos)
+        public DashboardController(AppDbContext context, SaldoService saldos, PrevisaoService previsoes)
         {
             _context = context;
             _saldos = saldos;
+            _previsoes = previsoes;
         }
 
         private static readonly string[] NomesMeses =
@@ -154,6 +156,7 @@ namespace ControleFinanceiro.API.Controllers
             var dashboard = new DashboardDto
             {
                 Financeiro = await _saldos.Resumo(mesFiltro, anoFiltro),
+                Previsoes = await _previsoes.Resumo(anoFiltro, mesFiltro),
                 SaldoConta = saldoConta,
                 RecebidoNoMes = recebidoNoMes,
                 GastoNoMes = gastoNoMes,

@@ -13,7 +13,7 @@ public sealed class FinanceiroException(string message, int status = 400) : Exce
     public int Status { get; } = status;
 }
 
-public class MovimentacaoService(AppDbContext db, TimeProvider clock)
+public class MovimentacaoService(AppDbContext db, TimeProvider clock, PrevisaoService previsoes)
 {
     public DateOnly Hoje => DateOnly.FromDateTime(clock.GetLocalNow().DateTime);
     private static void Exigir(bool condition, string message, int status = 400)
@@ -78,7 +78,9 @@ public class MovimentacaoService(AppDbContext db, TimeProvider clock)
         t.DataEfetivacao = dto.DataEfetivacao;
     }
 
-    public Task<Transacao> Criar(TransacaoRealizadaCreateDto dto) => Gravar(async () =>
+    public Task<Transacao> Criar(TransacaoRealizadaCreateDto dto) => Gravar(() => PrepararMovimento(dto));
+
+    private async Task<Transacao> PrepararMovimento(TransacaoRealizadaCreateDto dto)
     {
         var conta = await Conta(dto.ContaId!.Value);
         Exigir(conta.Ativa, "Novos movimentos exigem conta ativa.");
@@ -89,6 +91,21 @@ public class MovimentacaoService(AppDbContext db, TimeProvider clock)
         Preencher(t, dto);
         t.Data = dto.DataEfetivacao!.Value.ToDateTime(TimeOnly.MinValue);
         db.Transacoes.Add(t); return t;
+    }
+
+    public Task<Transacao> RealizarPrevisao(int id, RealizarPrevisaoDto dto) => Gravar(async () =>
+    {
+        var p = await previsoes.Obter(id);
+        PrevisaoService.Versao(p.Versao, dto.Versao); PrevisaoService.Ativa(p);
+        Exigir(p.Tipo == dto.Tipo, "O tipo da movimentação deve corresponder à previsão.");
+        var antes = PrevisaoService.Snapshot(p);
+        var t = await PrepararMovimento(dto);
+        t.Previsao = p; t.PrevisaoId = p.Id;
+        previsoes.InvalidarVersao(p);
+        // Salva para obter o Id, ainda dentro da mesma transação. Falhas posteriores revertem tudo.
+        await db.SaveChangesAsync();
+        previsoes.Revisao(p, "Realizacao", antes, $"Movimentação {t.Id} registrada e vinculada");
+        return t;
     });
 
     public Task<Transacao> Confirmar(int id, ConfirmarTransacaoDto dto) => Gravar(async () =>
@@ -108,7 +125,7 @@ public class MovimentacaoService(AppDbContext db, TimeProvider clock)
 
     private static string Snapshot(Transacao t) => JsonSerializer.Serialize(new {
         t.Titulo, t.Valor, t.Data, t.DataEfetivacao, t.ContaId, t.Tipo, t.Categoria,
-        t.MetodoPagamento, t.Estado, t.ConfirmadaEm, t.DesconsideradaEm, t.MotivoDesconsideracao
+        t.MetodoPagamento, t.Estado, t.ConfirmadaEm, t.DesconsideradaEm, t.MotivoDesconsideracao, t.PrevisaoId
     });
     private void Revisao(Transacao t, string antes, string motivo) => db.RevisoesTransacoes.Add(new() {
         Transacao = t, Instante = clock.GetUtcNow(), Motivo = motivo, Antes = antes, Depois = Snapshot(t)
@@ -119,6 +136,12 @@ public class MovimentacaoService(AppDbContext db, TimeProvider clock)
         var t = await Transacao(id); Versao(t.Versao, dto.Versao);
         Exigir(t.Estado == EstadoTransacao.Confirmada, "A correção financeira exige um movimento confirmado.", 409);
         await Elegivel(t); var motivo = Motivo(dto.Motivo); var antes = Snapshot(t);
+        if (t.PrevisaoId is int previsaoId)
+        {
+            var p = await previsoes.Obter(previsaoId);
+            Exigir(p.Tipo == dto.Tipo, "Remova o vínculo com a previsão antes de alterar o tipo.");
+            previsoes.InvalidarVersao(p);
+        }
         t.Conta = await Conta(dto.ContaId!.Value); t.ContaId = t.Conta.Id;
         Preencher(t, dto); // Data legada e instante original de confirmação são preservados.
         Revisao(t, antes, motivo); return t;
@@ -129,6 +152,7 @@ public class MovimentacaoService(AppDbContext db, TimeProvider clock)
         var t = await Transacao(id); Versao(t.Versao, dto.Versao); var motivo = Motivo(dto.Motivo);
         Exigir(t.Estado != EstadoTransacao.Desconsiderada, "Registro já desconsiderado.", 409);
         var antes = Snapshot(t);
+        if (t.PrevisaoId is int previsaoId) previsoes.InvalidarVersao(await previsoes.Obter(previsaoId));
         t.Estado = EstadoTransacao.Desconsiderada; t.DesconsideradaEm = clock.GetUtcNow(); t.MotivoDesconsideracao = motivo;
         Revisao(t, antes, motivo); return t;
     });

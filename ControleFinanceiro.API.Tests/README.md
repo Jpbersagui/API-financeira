@@ -1,4 +1,6 @@
-# Validação das Fases 1 e 2
+# Validação das Fases 1, 2 e 3
+
+Resultado atual (02/10/2026): **76 testes aprovados**, nenhum ignorado ou com falha. Build Release com zero avisos/erros; migration expansiva validada exclusivamente em bancos isolados; EF sem alterações pendentes. A seção Fase 3 ao final registra cobertura, decisões e inventário. As seções anteriores preservam os resultados históricos.
 
 Resultado final da Fase 2 (30/09/2026): **49 testes aprovados**, nenhum ignorado ou com falha; build Release com **zero avisos e zero erros**. Os 23 casos da Fase 1 foram preservados, com 26 casos novos, incluindo o segundo teste de interface. As seções originais da Fase 1 abaixo documentam aquela entrega; os contratos atuais estão na seção Fase 2.
 
@@ -137,3 +139,92 @@ docs/ROADMAP.md
 ```
 
 As atualizações prévias em REQUIREMENTS.md e DOMAIN_MODEL.md foram preservadas. Migrations anteriores e arquivos dos testes da Fase 1 não foram alterados. A nova migration substitui o índice simples por índice composto iniciado por ContaId, adiciona colunas/tabela/restrições e não apaga registros; seu Down remove os novos dados, portanto não deve ser usado como alternativa a backup.
+
+## Fase 3 — resultado e execução
+
+Validada em 02/10/2026: **76 testes aprovados** (50 anteriores + 26 novos), nenhum ignorado. Build Release com zero avisos/erros. Cinco casos de interface no Edge headless, incluindo os dois novos com viewport desktop de 1280 pixels e móvel de 390 pixels. Nenhum teste acessa o banco pessoal.
+
+```powershell
+dotnet build ControleFinanceiro.API.Tests/ControleFinanceiro.API.Tests.csproj --configuration Release --no-restore
+dotnet test ControleFinanceiro.API.Tests/ControleFinanceiro.API.Tests.csproj --configuration Release --no-build --logger "console;verbosity=minimal"
+dotnet ef migrations has-pending-model-changes --project ControleFinanceiro.API --configuration Release --no-build
+```
+
+A última verificação EF retornou que o modelo não possui alterações desde a última migration. A única migration criada nesta fase foi `20261002174011_AdicionarPrevisoesERealizacoes`. Migrations anteriores preservadas. A fixture parte de AddSalarios, aplica AdicionarContas e AdicionarAberturaEConfirmacao antes da nova migration. O cenário SeedFase2 insere conta inativa com abertura, movimento confirmado e revisão; compara campos e rowversions antes/depois. Nenhum vínculo ou previsão é inferido.
+
+Testes adicionados:
+
+* PrevisaoTests: 11 casos de cadastro, valores, original imutável, final zero, competência, estados, contas, dashboard e calendário local.
+* RealizacaoPrevisaoTests: 6 casos de realização parcial/múltipla/integral/excedente, contas diferentes, correção/desconsideração, concorrência e rollback.
+* VinculoPrevisaoTests: 6 casos de vínculo único/idempotente, desvínculo sem alterar saldo, histórico anterior à abertura/inativa, bloqueios e concorrência entre previsões.
+* Fase3MigrationTests: preservação dos dados das migrations anteriores, tabelas novas vazias, vínculo nulo, modelo sincronizado.
+* Fase3InterfaceTests: dois casos (desktop/celular) de previsão, realização parcial/total, final, vínculo/desvínculo, encerramento/reabertura, cancelamento e histórico, sem erros JavaScript ou overflow horizontal.
+
+O teste de atomicidade injeta falha ao gravar RevisaoPrevisao, após o INSERT da movimentação dentro da transação. Confere que movimentação, vínculo, versão e revisão não persistem. Concorrência verifica HTTP 409 e somente um movimento efetivo; vínculos concorrentes não compartilham uma transação.
+
+Decisões de implementação: Transacao.PrevisaoId opcional, relação integral sem rateio; totais derivados sem persistência; Serializable + rowversion; atualização de participante invalida a versão da previsão; repetição do vínculo existente é idempotente. Criação vinculada reutiliza o preparo de MovimentacaoService sem transações aninhadas. O tipo/original não entram na edição; propriedades não previstas no DTO de cadastro/edição são rejeitadas. SemValor é situação calculada para final zero sem pagamentos. Edição e novo valor final exigem estado Ativa. Encerramento/cancelamento/reabertura e desvinculação exigem motivo.
+
+As fórmulas de SaldoService não foram alteradas. O bloco dashboard.previsoes é separado de financeiro e das métricas antigas. Seu realizado é o total atual das previsões com DataPrevista no mês, mesmo que o pagamento tenha ocorrido depois. Canceladas não entram nos totais; encerradas preservam comparação e restante zero.
+
+Limitações: consultas sem paginação; resumo não reconstrói uma fotografia passada dos estados; correções financeiras são consultadas pelo histórico do movimento. Nenhuma recorrência, categoria cadastrável, transferência, cartão, fatura ou saldo projetado foi antecipado. A inicialização normal continua aplicando migrations pendentes: backup restaurável antes de executar contra o banco pessoal.
+
+## Inventário da Fase 3
+
+Caminhos relativos à raiz do workspace. As alterações de preparação já existentes nos três documentos de domínio foram preservadas; DOMAIN_MODEL.md não precisou de nova alteração nesta implementação.
+
+Arquivos criados:
+
+```text
+ControleFinanceiro.API/Models/Previsao.cs
+ControleFinanceiro.API/Models/RevisaoPrevisao.cs
+ControleFinanceiro.API/Enums/EstadoPrevisao.cs
+ControleFinanceiro.API/Enums/SituacaoPrevisao.cs
+ControleFinanceiro.API/Services/PrevisaoService.cs
+ControleFinanceiro.API/Controllers/PrevisoesController.cs
+ControleFinanceiro.API/DTOs/PrevisaoCreateDto.cs
+ControleFinanceiro.API/DTOs/PrevisaoUpdateDto.cs
+ControleFinanceiro.API/DTOs/PrevisaoReadDto.cs
+ControleFinanceiro.API/DTOs/PrevisaoFiltroDto.cs
+ControleFinanceiro.API/DTOs/DefinirValorFinalDto.cs
+ControleFinanceiro.API/DTOs/RealizarPrevisaoDto.cs
+ControleFinanceiro.API/DTOs/VincularTransacaoDto.cs
+ControleFinanceiro.API/DTOs/DesvincularTransacaoDto.cs
+ControleFinanceiro.API/DTOs/AlterarEstadoPrevisaoDto.cs
+ControleFinanceiro.API/DTOs/RevisaoPrevisaoDto.cs
+ControleFinanceiro.API/DTOs/ResumoPrevisoesDto.cs
+ControleFinanceiro.API/Migrations/20261002174011_AdicionarPrevisoesERealizacoes.cs
+ControleFinanceiro.API/Migrations/20261002174011_AdicionarPrevisoesERealizacoes.Designer.cs
+ControleFinanceiro.API/wwwroot/js/previsoes.js
+ControleFinanceiro.API.Tests/PrevisaoScenario.cs
+ControleFinanceiro.API.Tests/PrevisaoTests.cs
+ControleFinanceiro.API.Tests/RealizacaoPrevisaoTests.cs
+ControleFinanceiro.API.Tests/VinculoPrevisaoTests.cs
+ControleFinanceiro.API.Tests/Fase3MigrationTests.cs
+ControleFinanceiro.API.Tests/Fase3InterfaceTests.cs
+```
+
+Arquivos alterados nesta implementação:
+
+```text
+ControleFinanceiro.API/Models/Transacao.cs
+ControleFinanceiro.API/Data/AppDbContext.cs
+ControleFinanceiro.API/Services/MovimentacaoService.cs
+ControleFinanceiro.API/Controllers/TransacoesController.cs
+ControleFinanceiro.API/Controllers/DashboardController.cs
+ControleFinanceiro.API/DTOs/TransacaoReadDto.cs
+ControleFinanceiro.API/DTOs/DashboardDto.cs
+ControleFinanceiro.API/Program.cs
+ControleFinanceiro.API/Migrations/AppDbContextModelSnapshot.cs
+ControleFinanceiro.API/wwwroot/index.html
+ControleFinanceiro.API/wwwroot/css/style.css
+ControleFinanceiro.API/wwwroot/js/app.js
+ControleFinanceiro.API/wwwroot/js/contas.js
+ControleFinanceiro.API/wwwroot/js/movimentacoes.js
+ControleFinanceiro.API/docs/REQUIREMENTS.md
+ControleFinanceiro.API/docs/ROADMAP.md
+ControleFinanceiro.API.Tests/AberturaTests.cs
+ControleFinanceiro.API.Tests/SqlFixture.cs
+ControleFinanceiro.API.Tests/README.md
+```
+
+AberturaTests teve apenas a construção do serviço adaptada à dependência PrevisaoService, preservando as verificações anteriores. SqlFixture ganhou o cenário sintético da Fase 2 e a comparação adicional da migration.

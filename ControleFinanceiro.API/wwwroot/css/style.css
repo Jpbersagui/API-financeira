@@ -68,6 +68,11 @@
 .transactions-table select { max-width: 180px; padding: 6px; }
 #transactions-body { overflow-x: auto; }
 [hidden] { display: none !important; }
+.previsoes-section { border-left: 4px solid #c4a65a; }
+.previsoes-section p, #prev-valores { margin: 14px 0; line-height: 1.6; }
+.previsoes-section textarea { width: 100%; min-height: 80px; }
+#previsao-dialog article { border-bottom: 1px solid var(--border-subtle); padding: 10px 0; }
+#previsao-dialog, .previsoes-section { overflow-wrap: anywhere; }
 .finance-section { margin-bottom: 20px; }
 .quick-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
 .finance-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin: 20px 0; }
